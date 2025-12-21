@@ -29,7 +29,7 @@ def duckdb_query_local(
         if sources:
             # Ensure sources is a list and each source is a dict
             if not isinstance(sources, list):
-                raise GuardError(f"sources must be a list, got {type(sources)}")
+                raise GuardError(f"sources must be a list, got {type(sources)}: {sources}")
             for source in sources:
                 if not isinstance(source, dict):
                     raise GuardError(f"Each source must be a dict, got {type(source)}: {source}")
@@ -62,11 +62,25 @@ def duckdb_query_local(
                         raise GuardError(f"Dataset {dataset_id} not found. Tried: {path}")
                     # Read parquet in this connection - use absolute path
                     abs_path = str(path.resolve())
+                    # Drop view if it exists to avoid conflicts
                     try:
-                        view_sql = f"CREATE VIEW {name} AS SELECT * FROM read_parquet('{abs_path}')"
+                        conn.execute(f"DROP VIEW IF EXISTS {name}")
+                    except Exception:
+                        pass  # Ignore if view doesn't exist
+                    # Create view
+                    view_sql = f"CREATE VIEW {name} AS SELECT * FROM read_parquet('{abs_path}')"
+                    try:
                         conn.execute(view_sql)
                     except Exception as e:
                         raise GuardError(f"Failed to create view {name} from {abs_path}: {e}")
+                    # Verify view was created
+                    try:
+                        views = conn.execute("SHOW TABLES").fetchall()
+                        view_names = [v[0] if isinstance(v, tuple) else v for v in views]
+                        if name not in view_names:
+                            raise GuardError(f"View {name} was not created successfully. Available views: {view_names}")
+                    except Exception as e:
+                        raise GuardError(f"Failed to verify view {name} creation: {e}")
                 elif "path" in source and "format" in source:
                     # Load from file
                     path = source["path"]
