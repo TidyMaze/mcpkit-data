@@ -1053,6 +1053,8 @@ def duckdb_query_local(
 ) -> QueryResultResponse:
     """Execute SQL query on local sources (DuckDB)."""
     max_rows = _to_int(max_rows, None)
+    # Ensure sources is parsed (fallback if BeforeValidator didn't run)
+    sources = _parse_list_param(sources, None)
     result = duckdb_ops.duckdb_query_local(sql, sources, max_rows)
     return QueryResultResponse(**result)
 
