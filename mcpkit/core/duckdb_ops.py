@@ -1,11 +1,12 @@
 """DuckDB local SQL operations."""
 
+from pathlib import Path
 from typing import Optional
 
 import duckdb
 
 from .guards import GuardError, cap_rows, get_max_rows
-from .registry import get_dataset_path
+from .registry import get_dataset_path, dataset_info
 
 
 def duckdb_query_local(
@@ -37,11 +38,35 @@ def duckdb_query_local(
                 if "dataset_id" in source:
                     # Load from registry
                     dataset_id = source["dataset_id"]
-                    path = get_dataset_path(dataset_id)
-                    if not path.exists():
-                        raise GuardError(f"Dataset {dataset_id} not found")
-                    # Read parquet in this connection
-                    conn.execute(f"CREATE VIEW {name} AS SELECT * FROM read_parquet('{str(path)}')")
+                    # Get path from index (which has the actual stored path)
+                    path = None
+                    try:
+                        info = dataset_info(dataset_id)
+                        path = Path(info["path"])
+                    except Exception:
+                        # Fallback: try to find dataset in common locations
+                        # First try constructed path
+                        path = get_dataset_path(dataset_id)
+                        if not path.exists():
+                            # Try in current directory .datasets/
+                            local_path = Path.cwd() / ".datasets" / f"{dataset_id}.parquet"
+                            if local_path.exists():
+                                path = local_path
+                            else:
+                                # Try relative to this file's directory
+                                this_file = Path(__file__).parent.parent.parent / ".datasets" / f"{dataset_id}.parquet"
+                                if this_file.exists():
+                                    path = this_file
+                    
+                    if not path or not path.exists():
+                        raise GuardError(f"Dataset {dataset_id} not found. Tried: {path}")
+                    # Read parquet in this connection - use absolute path
+                    abs_path = str(path.resolve())
+                    try:
+                        view_sql = f"CREATE VIEW {name} AS SELECT * FROM read_parquet('{abs_path}')"
+                        conn.execute(view_sql)
+                    except Exception as e:
+                        raise GuardError(f"Failed to create view {name} from {abs_path}: {e}")
                 elif "path" in source and "format" in source:
                     # Load from file
                     path = source["path"]
