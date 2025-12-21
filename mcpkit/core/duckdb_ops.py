@@ -59,19 +59,29 @@ def duckdb_query_local(
                 else:
                     raise GuardError("Source must have either 'dataset_id' or 'path' and 'format'")
         
-        # Execute query
-        result = conn.execute(sql).fetchall()
+        # Execute query and get columns
+        cursor = conn.execute(sql)
         
-        # Get columns from description
+        # Get columns from cursor description (available before fetchall)
         # DuckDB description is a list of tuples: (name, type, ...)
+        columns = []
         try:
-            if conn.description:
-                columns = [desc[0] for desc in conn.description]
-            else:
-                # Fallback: try to get columns from result if description is not available
-                columns = []
+            if cursor.description:
+                columns = [desc[0] for desc in cursor.description]
         except Exception:
-            columns = []
+            pass
+        
+        # If columns still empty, try using df() method as fallback
+        if not columns:
+            try:
+                df = cursor.df()
+                columns = list(df.columns)
+                result = [list(row) for row in df.itertuples(index=False)]
+            except Exception:
+                # Last resort: fetchall and return empty columns
+                result = cursor.fetchall()
+        else:
+            result = cursor.fetchall()
         
         # Cap rows
         rows = cap_rows(result, max_rows)
