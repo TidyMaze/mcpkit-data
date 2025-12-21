@@ -428,6 +428,25 @@ def _parse_list_param(value, default=None):
     return default
 
 
+def _list_validator(value):
+    """Pydantic validator to convert string (JSON array) to list."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        if value.lower() == "null" or value == "":
+            return None
+        try:
+            import json
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+    return value
+
+
 def _int_validator(value):
     """Pydantic validator to convert string to int for Optional[int] parameters."""
     if value is None:
@@ -807,10 +826,9 @@ def event_validate(
 @mcp.tool()
 def event_fingerprint(
     record: Annotated[dict, Field(description="Record dict or object")],
-    fields: Annotated[Optional[list[str]], Field(description="Optional list of field names to include (if None, uses all fields)")] = None,
+    fields: Annotated[Optional[Union[list[str], str]], BeforeValidator(_list_validator), Field(description="Optional list of field names to include (if None, uses all fields)")] = None,
 ) -> FingerprintResponse:
     """Generate fingerprint for record."""
-    fields = _parse_list_param(fields, None)
     result = json_tools.event_fingerprint(record, fields)
     return FingerprintResponse(**result)
 
@@ -916,11 +934,10 @@ def pandas_diff_frames(
     dataset_a: Annotated[str, Field(description="First dataset ID")],
     dataset_b: Annotated[str, Field(description="Second dataset ID")],
     key_cols: Annotated[list[str], Field(description="List of column names to use as keys")],
-    compare_cols: Annotated[Optional[list[str]], Field(description="Optional list of columns to compare (if None, compares all non-key columns)")] = None,
+    compare_cols: Annotated[Optional[Union[list[str], str]], BeforeValidator(_list_validator), Field(description="Optional list of columns to compare (if None, compares all non-key columns)")] = None,
     max_changed: Annotated[int, Field(description="Maximum changed rows to return. Default: 200")] = 200,
 ) -> DatasetDiffResponse:
     """Compare two datasets and find differences."""
-    compare_cols = _parse_list_param(compare_cols, None)
     max_changed = _to_int(max_changed, 200)
     result = pandas_ops.pandas_diff_frames(dataset_a, dataset_b, key_cols, compare_cols, max_changed)
     return DatasetDiffResponse(**result)
@@ -929,13 +946,11 @@ def pandas_diff_frames(
 @mcp.tool()
 def pandas_schema_check(
     dataset_id: Annotated[str, Field(description="Dataset ID")],
-    required_columns: Annotated[Optional[list[str]], Field(description="Optional list of required column names")] = None,
+    required_columns: Annotated[Optional[Union[list[str], str]], BeforeValidator(_list_validator), Field(description="Optional list of required column names")] = None,
     dtype_overrides: Annotated[Optional[dict[str, str]], Field(description="Optional dict mapping column names to expected dtypes")] = None,
-    non_null_columns: Annotated[Optional[list[str]], Field(description="Optional list of columns that must not be null")] = None,
+    non_null_columns: Annotated[Optional[Union[list[str], str]], BeforeValidator(_list_validator), Field(description="Optional list of columns that must not be null")] = None,
 ) -> SchemaCheckResponse:
     """Check dataset schema constraints."""
-    required_columns = _parse_list_param(required_columns, None)
-    non_null_columns = _parse_list_param(non_null_columns, None)
     result = pandas_ops.pandas_schema_check(dataset_id, required_columns, dtype_overrides, non_null_columns)
     return SchemaCheckResponse(**result)
 
@@ -970,10 +985,9 @@ def pandas_sample_random(
 @mcp.tool()
 def pandas_count_distinct(
     dataset_id: Annotated[str, Field(description="Dataset ID")],
-    columns: Annotated[Optional[list[str]], Field(description="Optional list of columns to count. If None, counts all columns.")] = None,
+    columns: Annotated[Optional[Union[list[str], str]], BeforeValidator(_list_validator), Field(description="Optional list of columns to count. If None, counts all columns.")] = None,
 ) -> DistinctCountsResponse:
     """Count distinct values per column."""
-    columns = _parse_list_param(columns, None)
     result = pandas_ops.pandas_count_distinct(dataset_id, columns)
     return DistinctCountsResponse(**result)
 
@@ -1034,12 +1048,11 @@ def polars_export(
 @mcp.tool()
 def duckdb_query_local(
     sql: Annotated[str, Field(description="SQL query string")],
-    sources: Annotated[Optional[list[dict]], Field(description="Optional list of source definitions: {\"name\": str, \"dataset_id\": str} for registry datasets OR {\"name\": str, \"path\": str, \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"} for files")] = None,
+    sources: Annotated[Optional[Union[list[dict], str]], BeforeValidator(_list_validator), Field(description="Optional list of source definitions: {\"name\": str, \"dataset_id\": str} for registry datasets OR {\"name\": str, \"path\": str, \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"} for files")] = None,
     max_rows: Annotated[Optional[int], Field(description="Optional max rows to return. Default: MCPKIT_MAX_ROWS")] = None,
 ) -> QueryResultResponse:
     """Execute SQL query on local sources (DuckDB)."""
     max_rows = _to_int(max_rows, None)
-    sources = _parse_list_param(sources, None)
     result = duckdb_ops.duckdb_query_local(sql, sources, max_rows)
     return QueryResultResponse(**result)
 
