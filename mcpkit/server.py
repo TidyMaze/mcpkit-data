@@ -409,6 +409,25 @@ def _to_int(value, default=None):
     return default
 
 
+def _parse_list_param(value, default=None):
+    """Parse list parameter that might come as string (JSON array) or list."""
+    if value is None:
+        return default
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        if value.lower() == "null" or value == "":
+            return default
+        try:
+            import json
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+    return default
+
+
 def _int_validator(value):
     """Pydantic validator to convert string to int for Optional[int] parameters."""
     if value is None:
@@ -791,6 +810,7 @@ def event_fingerprint(
     fields: Annotated[Optional[list[str]], Field(description="Optional list of field names to include (if None, uses all fields)")] = None,
 ) -> FingerprintResponse:
     """Generate fingerprint for record."""
+    fields = _parse_list_param(fields, None)
     result = json_tools.event_fingerprint(record, fields)
     return FingerprintResponse(**result)
 
@@ -900,6 +920,7 @@ def pandas_diff_frames(
     max_changed: Annotated[int, Field(description="Maximum changed rows to return. Default: 200")] = 200,
 ) -> DatasetDiffResponse:
     """Compare two datasets and find differences."""
+    compare_cols = _parse_list_param(compare_cols, None)
     max_changed = _to_int(max_changed, 200)
     result = pandas_ops.pandas_diff_frames(dataset_a, dataset_b, key_cols, compare_cols, max_changed)
     return DatasetDiffResponse(**result)
@@ -913,6 +934,8 @@ def pandas_schema_check(
     non_null_columns: Annotated[Optional[list[str]], Field(description="Optional list of columns that must not be null")] = None,
 ) -> SchemaCheckResponse:
     """Check dataset schema constraints."""
+    required_columns = _parse_list_param(required_columns, None)
+    non_null_columns = _parse_list_param(non_null_columns, None)
     result = pandas_ops.pandas_schema_check(dataset_id, required_columns, dtype_overrides, non_null_columns)
     return SchemaCheckResponse(**result)
 
@@ -950,6 +973,7 @@ def pandas_count_distinct(
     columns: Annotated[Optional[list[str]], Field(description="Optional list of columns to count. If None, counts all columns.")] = None,
 ) -> DistinctCountsResponse:
     """Count distinct values per column."""
+    columns = _parse_list_param(columns, None)
     result = pandas_ops.pandas_count_distinct(dataset_id, columns)
     return DistinctCountsResponse(**result)
 
@@ -1015,16 +1039,7 @@ def duckdb_query_local(
 ) -> QueryResultResponse:
     """Execute SQL query on local sources (DuckDB)."""
     max_rows = _to_int(max_rows, None)
-    # Convert sources: if None or empty string, use None; if list, use as-is
-    if sources is None or sources == "" or (isinstance(sources, str) and sources.lower() == "null"):
-        sources = None
-    elif not isinstance(sources, list):
-        # Try to parse as JSON if it's a string
-        try:
-            import json
-            sources = json.loads(sources) if isinstance(sources, str) else sources
-        except Exception:
-            sources = None
+    sources = _parse_list_param(sources, None)
     result = duckdb_ops.duckdb_query_local(sql, sources, max_rows)
     return QueryResultResponse(**result)
 
