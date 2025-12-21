@@ -383,33 +383,292 @@ export MCPKIT_JDBC_PASSWORD="pass"  # optional
 
 ## 🎯 Example Workflows
 
-### 🔍 Debug a Kafka Topic
+### 🔍 End-to-End Kafka Pipeline Debugging
 
+**You:** "Debug the 'order-events' topic: consume recent messages, decode Avro, filter errors, analyze patterns, and create a chart"
+
+**AI Response:**
 ```
-You: "Check the last 10 messages from topic 'user-events'"
-AI: [Uses kafka_consume_tail → dataset_head_tail → shows results]
+I'll debug the order-events pipeline end-to-end.
+
+[Step 1: kafka_consume_tail] Consuming last 50 messages...
+✓ Consumed 50 messages from 'order-events'
+
+[Step 2: schema_registry_get] Fetching Avro schema...
+✓ Schema retrieved: order-event v2.3 (ID: 145)
+
+[Step 3: avro_decode] Decoding Avro messages...
+✓ Decoded 50 messages successfully
+
+[Step 4: kafka_filter] Filtering error events...
+✓ Found 8 error events matching criteria
+
+[Step 5: pandas_groupby] Analyzing error patterns...
+Error breakdown:
+- Payment failures: 4 (50%)
+- Validation errors: 2 (25%)
+- Timeout errors: 2 (25%)
+
+[Step 6: dataset_to_chart] Creating visualization...
+✓ Chart saved: .artifacts/order_errors_analysis.png
+
+[Step 7: pandas_export] Exporting error details...
+✓ CSV exported: .artifacts/order_errors_20251221.csv
+
+Summary: 8 errors out of 50 messages (16% error rate). Payment failures are the primary issue.
 ```
 
-### 📊 Analyze Database Data
+**Tools used:** `kafka_consume_tail` → `schema_registry_get` → `avro_decode` → `kafka_filter` → `pandas_groupby` → `dataset_to_chart` → `pandas_export` (7 tools)
 
+---
+
+### 📊 Multi-Source Data Reconciliation
+
+**You:** "Compare sales data between Athena and Postgres: query both, join on order_id, find discrepancies, and export differences"
+
+**AI Response:**
 ```
-You: "Query the users table and show me a chart of signups by month"
-AI: [Uses jdbc_query_ro → pandas_groupby → dataset_to_chart]
+I'll reconcile sales data between Athena and Postgres.
+
+[Step 1: athena_start_query] Querying Athena sales table...
+✓ Query started: execution_id abc123
+
+[Step 2: athena_poll_query] Waiting for completion...
+✓ Query completed in 3.2s (scanned 1.2 GB)
+
+[Step 3: athena_get_results] Fetching results...
+✓ Retrieved 5,234 rows from Athena
+
+[Step 4: pandas_from_rows] Storing Athena data...
+✓ Dataset created: athena_sales_20251221
+
+[Step 5: jdbc_query_ro] Querying Postgres sales table...
+✓ Retrieved 5,189 rows from Postgres
+
+[Step 6: pandas_from_rows] Storing Postgres data...
+✓ Dataset created: postgres_sales_20251221
+
+[Step 7: pandas_join] Joining datasets on order_id...
+✓ Joined datasets: 5,180 matching orders
+
+[Step 8: pandas_diff_frames] Finding discrepancies...
+Discrepancies found:
+- Missing in Postgres: 54 orders
+- Missing in Athena: 9 orders
+- Amount mismatches: 12 orders
+- Total discrepancy value: $3,456.78
+
+[Step 9: pandas_export] Exporting differences...
+✓ Differences exported: .artifacts/sales_reconciliation_diff.csv
+
+[Step 10: reconcile_counts] Generating reconciliation report...
+✓ Report saved: .artifacts/sales_reconciliation_report.json
 ```
 
-### ☁️ Query Athena and Export
+**Tools used:** `athena_start_query` → `athena_poll_query` → `athena_get_results` → `pandas_from_rows` → `jdbc_query_ro` → `pandas_from_rows` → `pandas_join` → `pandas_diff_frames` → `pandas_export` → `reconcile_counts` (10 tools)
 
+---
+
+### 🏗️ Service Health Investigation
+
+**You:** "Investigate the 'payment-service': find it in Nomad, check Consul health, get logs, filter errors, correlate with events, and export report"
+
+**AI Response:**
 ```
-You: "Query Athena for sales data, group by region, and export to CSV"
-AI: [Uses athena_start_query → athena_get_results → pandas_groupby → pandas_export]
+I'll investigate the payment-service health comprehensively.
+
+[Step 1: nomad_list_jobs] Finding payment-service...
+✓ Found: platform-payment-service-app (status: running)
+
+[Step 2: nomad_get_job_status] Getting job details...
+✓ Job running on node: node-abc-123
+✓ Allocation: alloc-def-456
+
+[Step 3: consul_get_service_health] Checking Consul health...
+✓ Service health: passing (3/3 checks passing)
+✓ Service IPs: 10.0.1.45:8080, 10.0.1.46:8080
+
+[Step 4: nomad_get_allocation_logs] Retrieving logs...
+✓ Retrieved last 200 log lines
+
+[Step 5: pandas_from_rows] Storing logs as dataset...
+✓ Dataset created: payment_service_logs
+
+[Step 6: pandas_filter_query] Filtering error logs...
+✓ Found 15 error entries in last hour
+
+[Step 7: kafka_consume_batch] Consuming related events...
+✓ Consumed 100 payment events from Kafka
+
+[Step 8: event_correlate] Correlating logs with events...
+✓ Correlated 12 error logs with payment events
+
+[Step 9: pandas_groupby] Analyzing error patterns...
+Error analysis:
+- Database timeouts: 8 (53%)
+- External API failures: 4 (27%)
+- Validation errors: 3 (20%)
+
+[Step 10: evidence_bundle_plus] Generating evidence bundle...
+✓ Bundle created:
+  - .artifacts/payment_service_investigation_stats.json
+  - .artifacts/payment_service_error_logs.csv
+  - .artifacts/payment_service_correlated_events.csv
+
+Summary: Service is healthy but experiencing intermittent database timeouts affecting 8 transactions.
 ```
 
-### 🏗️ Debug a Failing Service
+**Tools used:** `nomad_list_jobs` → `nomad_get_job_status` → `consul_get_service_health` → `nomad_get_allocation_logs` → `pandas_from_rows` → `pandas_filter_query` → `kafka_consume_batch` → `event_correlate` → `pandas_groupby` → `evidence_bundle_plus` (10 tools)
 
+---
+
+### ✅ Data Quality Validation Pipeline
+
+**You:** "Validate Kafka events: consume batch, flatten nested JSON, validate against schema, check data quality, and generate report"
+
+**AI Response:**
 ```
-You: "Find the 'conversion-api' service and show me its logs"
-AI: [Uses nomad_list_jobs → nomad_get_job_status → nomad_get_allocation_logs]
+I'll run a complete data quality validation on Kafka events.
+
+[Step 1: kafka_consume_batch] Consuming event batch...
+✓ Consumed 500 messages from 'user-actions' topic
+
+[Step 2: kafka_flatten] Flattening nested JSON structures...
+✓ Flattened 500 records into 45 columns
+✓ Dataset created: user_actions_flattened
+
+[Step 3: schema_registry_get] Fetching validation schema...
+✓ Retrieved JSONSchema: user-action-event v1.2
+
+[Step 4: pandas_sample_random] Sampling for validation...
+✓ Sampled 50 random records
+
+[Step 5: event_validate] Validating against schema...
+Validation results:
+- Valid records: 47 (94%)
+- Invalid records: 3 (6%)
+  - Missing required field 'timestamp': 2
+  - Invalid enum value 'action_type': 1
+
+[Step 6: pandas_schema_check] Checking data types and constraints...
+✓ Schema check passed: all required columns present
+⚠️ Warning: 12% null values in 'metadata' column
+
+[Step 7: pandas_count_distinct] Analyzing data quality...
+Distinct value counts:
+- user_id: 234 unique (expected: ~250)
+- action_type: 8 distinct (expected: 10)
+- session_id: 198 unique
+
+[Step 8: pandas_filter_time_range] Filtering recent events...
+✓ Filtered to last 24 hours: 487 events
+
+[Step 9: great_expectations_check] Running GE validation suite...
+✓ Expectations passed: 8/10
+⚠️ Failed: 
+  - expect_column_values_to_be_unique (user_id)
+  - expect_column_values_to_not_be_null (metadata)
+
+[Step 10: evidence_bundle_plus] Generating quality report...
+✓ Quality report: .artifacts/data_quality_report_20251221.zip
 ```
+
+**Tools used:** `kafka_consume_batch` → `kafka_flatten` → `schema_registry_get` → `pandas_sample_random` → `event_validate` → `pandas_schema_check` → `pandas_count_distinct` → `pandas_filter_time_range` → `great_expectations_check` → `evidence_bundle_plus` (10 tools)
+
+---
+
+### 📈 Time-Series Analysis & Forecasting
+
+**You:** "Analyze sales trends: query Athena for last 6 months, filter by date range, group by week, sample for quality, create chart, and export"
+
+**AI Response:**
+```
+I'll analyze sales trends over the last 6 months.
+
+[Step 1: athena_start_query] Starting sales query...
+✓ Query: SELECT * FROM sales WHERE date >= '2025-06-01'
+
+[Step 2: athena_poll_query] Monitoring execution...
+✓ Query running... (scanned 2.1 GB so far)
+
+[Step 3: athena_get_results] Fetching results...
+✓ Retrieved 45,678 sales records
+
+[Step 4: pandas_from_rows] Storing in dataset...
+✓ Dataset created: sales_6months
+
+[Step 5: pandas_filter_time_range] Filtering date range...
+✓ Filtered: 2025-06-01 to 2025-12-21 (45,234 records)
+
+[Step 6: pandas_groupby] Grouping by week and region...
+✓ Aggregated: 26 weeks × 4 regions = 104 groups
+
+[Step 7: pandas_sample_stratified] Stratified sampling...
+✓ Sampled 20 records per region for validation
+
+[Step 8: pandas_describe] Statistical analysis...
+Statistics:
+- Total sales: $12,345,678
+- Average per week: $474,833
+- Trend: +5.2% week-over-week
+- Peak week: Week 24 ($567,890)
+
+[Step 9: dataset_to_chart] Creating time-series chart...
+✓ Chart: .artifacts/sales_trends_6months.png
+
+[Step 10: pandas_export] Exporting aggregated data...
+✓ Exported: .artifacts/sales_by_week_region.csv (104 rows)
+✓ Exported: .artifacts/sales_statistics.json
+```
+
+**Tools used:** `athena_start_query` → `athena_poll_query` → `athena_get_results` → `pandas_from_rows` → `pandas_filter_time_range` → `pandas_groupby` → `pandas_sample_stratified` → `pandas_describe` → `dataset_to_chart` → `pandas_export` (10 tools)
+
+---
+
+### 🔄 Cross-System Event Correlation
+
+**You:** "Correlate user events across systems: get Kafka events, query database for user profiles, join datasets, deduplicate, correlate timestamps, and export"
+
+**AI Response:**
+```
+I'll correlate user events across Kafka and database systems.
+
+[Step 1: kafka_consume_batch] Consuming user events...
+✓ Consumed 1,000 events from 'user-events' topic
+
+[Step 2: kafka_flatten] Flattening event structure...
+✓ Flattened to 1,000 records with 32 columns
+
+[Step 3: jdbc_query_ro] Querying user profiles...
+✓ Retrieved 850 user profiles from database
+
+[Step 4: pandas_from_rows] Storing profiles...
+✓ Dataset created: user_profiles
+
+[Step 5: pandas_join] Joining events with profiles...
+✓ Joined on user_id: 987 matched records
+
+[Step 6: dedupe_by_id] Removing duplicate events...
+✓ Deduplicated: 23 duplicates removed (964 unique)
+
+[Step 7: event_correlate] Correlating by timestamp...
+✓ Correlated events into 234 user sessions
+
+[Step 8: pandas_groupby] Analyzing session patterns...
+Session analysis:
+- Average session duration: 12.5 minutes
+- Events per session: 4.1
+- Most active users: 12 users with 10+ events
+
+[Step 9: pandas_filter_query] Filtering high-value sessions...
+✓ Found 45 sessions with purchase events
+
+[Step 10: pandas_export] Exporting correlated data...
+✓ Exported: .artifacts/correlated_user_sessions.csv
+✓ Exported: .artifacts/session_analysis.json
+```
+
+**Tools used:** `kafka_consume_batch` → `kafka_flatten` → `jdbc_query_ro` → `pandas_from_rows` → `pandas_join` → `dedupe_by_id` → `event_correlate` → `pandas_groupby` → `pandas_filter_query` → `pandas_export` (10 tools)
 
 ---
 
