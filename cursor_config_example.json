@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "mcpkit-data": {
+      "command": "/path/to/mcpkit-data/.venv/bin/python",
+      "args": ["-m", "mcpkit.server"],
+      "env": {
+        "MCPKIT_ROOTS": "/path/to/mcpkit-data:/path/to/allowed",
+        "MCPKIT_DATASET_DIR": "/path/to/mcpkit-data/.datasets",
+        "MCPKIT_ARTIFACT_DIR": "/path/to/mcpkit-data/.artifacts"
+      }
+    }
+  }
+}

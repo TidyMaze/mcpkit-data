@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcpkit-data"
+version = "0.1.0"
+description = "MCP server with data engineering tools (Kafka, Schema Registry, JDBC, AWS, pandas, polars, duckdb)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2",
+    "requests",
+    "kafka-python",
+    "fastavro",
+    "protobuf",
+    "jsonschema",
+    "jmespath",
+    "boto3",
+    "pandas",
+    "polars",
+    "pyarrow",
+    "duckdb",
+    "JayDeBeApi",
+    "JPype1",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock",
+    "responses",
+]
+integration = [
+    "confluent-kafka",
+]
+
+[tool.setuptools]
+packages = ["mcpkit", "mcpkit.core"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
+
