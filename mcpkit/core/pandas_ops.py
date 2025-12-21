@@ -241,10 +241,23 @@ def pandas_schema_check(
                         "null_count": int(null_count),
                     })
     
+    # Convert issues to error strings for response
+    errors = []
+    if issues:
+        for issue in issues:
+            if issue["type"] == "missing_columns":
+                errors.append(f"Missing columns: {', '.join(issue['columns'])}")
+            elif issue["type"] == "dtype_mismatch":
+                errors.append(f"Column {issue['column']}: expected {issue['expected']}, got {issue['actual']}")
+            elif issue["type"] == "null_values":
+                errors.append(f"Column {issue['column']}: {issue['null_count']} null values")
+    
     return {
         "dataset_id": dataset_id,
         "valid": len(issues) == 0,
-        "issues": issues,
+        "errors": errors if errors else None,
+        "columns": list(df.columns),
+        "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
     }
 
 

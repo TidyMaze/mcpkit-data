@@ -26,7 +26,12 @@ def duckdb_query_local(
     try:
         # Register sources
         if sources:
+            # Ensure sources is a list and each source is a dict
+            if not isinstance(sources, list):
+                raise GuardError(f"sources must be a list, got {type(sources)}")
             for source in sources:
+                if not isinstance(source, dict):
+                    raise GuardError(f"Each source must be a dict, got {type(source)}: {source}")
                 name = source["name"]
                 
                 if "dataset_id" in source:
