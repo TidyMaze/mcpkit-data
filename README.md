@@ -9,6 +9,30 @@ A comprehensive [Model Context Protocol](https://modelcontextprotocol.io) server
 
 ---
 
+## ⚠️ Early Days Disclaimer
+
+**Hey there! 👋** Before you dive in, here's the deal:
+
+This is a **brand new project** fresh out of the oven 🍞. We're talking:
+- 🆕 **First release** - Like, literally just born
+- 🧪 **Not production-ready** - More like "works on my machine" ready
+- 👥 **Limited testing** - It's mostly been tested by... well, me
+- 🛠️ **Actively evolving** - Things might break, change, or surprise you
+
+**What this means:**
+- ✅ Great for experimentation and learning
+- ✅ Perfect for side projects and personal use
+- ✅ Awesome if you want to contribute and shape the future
+- ❌ Probably not ideal for critical production systems (yet!)
+- ❌ Might have bugs, quirks, or "interesting" behaviors
+- ❌ Documentation might be incomplete or confusing
+
+**But here's the cool part:** You can help make it better! 🚀 Found a bug? Report it! Want a feature? Ask for it! Want to contribute? We'd love that!
+
+*TL;DR: This is the "early access" version. Use at your own risk, have fun, and help us make it awesome!* 🎉
+
+---
+
 ## 🎯 What is this?
 
 **mcpkit-data** is your AI assistant's Swiss Army knife for data engineering. It exposes **66+ tools** through the MCP protocol, letting your AI:
