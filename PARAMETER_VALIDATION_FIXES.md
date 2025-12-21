@@ -38,27 +38,28 @@ Fixed parameter validation issues for `list[dict]` parameters that were failing 
 
 ## Implementation Details
 
-All tools use the `_parse_list_param()` helper function to convert JSON strings to Python lists:
+All tools use helper functions to convert JSON strings to Python types:
+
+### `_parse_list_param()`
+Converts JSON strings to Python lists with improved error handling:
 
 ```python
 def _parse_list_param(value, default=None):
     """Parse list parameter that might come as string (JSON array) or list."""
-    if value is None:
-        return default
-    if isinstance(value, list):
-        return value
-    if isinstance(value, str):
-        if value.lower() == "null" or value == "":
-            return default
-        try:
-            import json
-            parsed = json.loads(value)
-            if isinstance(parsed, list):
-                return parsed
-        except Exception:
-            pass
-    return default
+    # ... validation and parsing with clear error messages ...
+    # Raises GuardError with helpful messages for invalid input
 ```
+
+### `_parse_dict_param()`
+Available for future dict parameters that might need JSON string conversion:
+```python
+def _parse_dict_param(value, default=None):
+    """Parse dict parameter that might come as string (JSON object) or dict."""
+    # Similar to _parse_list_param but for dicts
+    # Raises GuardError with helpful messages for invalid input
+```
+
+**Note:** Simple `dict` parameters (like `headers`, `params`, `aggs`) work fine with FastMCP as-is. Only `list[dict]` parameters needed conversion.
 
 ## Testing
 

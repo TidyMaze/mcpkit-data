@@ -424,8 +424,39 @@ def _parse_list_param(value, default=None):
             parsed = json.loads(value)
             if isinstance(parsed, list):
                 return parsed
-        except Exception:
-            pass
+            else:
+                raise GuardError(f"Expected JSON array (list), got {type(parsed).__name__}")
+        except json.JSONDecodeError as e:
+            raise GuardError(f"Invalid JSON string for list parameter: {e}. Expected JSON array, got: {value[:100]}")
+        except GuardError:
+            raise
+        except Exception as e:
+            raise GuardError(f"Error parsing list parameter: {e}")
+    return default
+
+
+def _parse_dict_param(value, default=None):
+    """Parse dict parameter that might come as string (JSON object) or dict."""
+    if value is None:
+        return default
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        if value.lower() == "null" or value == "":
+            return default
+        try:
+            import json
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+            else:
+                raise GuardError(f"Expected JSON object (dict), got {type(parsed).__name__}")
+        except json.JSONDecodeError as e:
+            raise GuardError(f"Invalid JSON string for dict parameter: {e}. Expected JSON object, got: {value[:100]}")
+        except GuardError:
+            raise
+        except Exception as e:
+            raise GuardError(f"Error parsing dict parameter: {e}")
     return default
 
 
