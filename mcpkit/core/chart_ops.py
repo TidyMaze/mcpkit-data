@@ -149,6 +149,14 @@ def _auto_pick_chart(detected: dict, df: pd.DataFrame, goal: Optional[str] = Non
         else:
             spec["y"] = numeric_cols[0]
         spec["agg"] = "mean"
+        # If multiple categorical columns and data looks pre-aggregated, use grouping
+        if len(categorical_cols) >= 2:
+            x_unique = df[categorical_cols[0]].nunique()
+            y_unique = df[categorical_cols[1]].nunique()
+            # If we have multiple categories per x value, it's likely grouped data
+            # Check if any x value appears multiple times (indicating grouping)
+            if df[categorical_cols[0]].value_counts().max() > 1:
+                spec["group_by"] = categorical_cols[1]
         # If high cardinality, use top_k
         if detected[categorical_cols[0]]["cardinality"] > 20:
             spec["top_k"] = 20
@@ -222,8 +230,8 @@ def _render_chart(df: pd.DataFrame, spec: dict, output_path: Path, output_format
             if y_col:
                 # Check if data is already aggregated (each x_col value appears once)
                 # If so, plot directly; otherwise aggregate
-                if df[x_col].nunique() == len(df):
-                    # Data is already aggregated - plot directly
+                if df[x_col].nunique() == len(df) and not spec.get("group_by"):
+                    # Data is already aggregated - plot directly (no grouping)
                     plot_df = df.sort_values(by=y_col, ascending=False) if y_col in df.columns else df
                     # Apply top_k if specified
                     if spec.get("top_k"):
@@ -231,21 +239,40 @@ def _render_chart(df: pd.DataFrame, spec: dict, output_path: Path, output_format
                     plt.bar(plot_df[x_col], plot_df[y_col])
                     plt.xlabel(x_col)
                     plt.ylabel(y_col)
+                    plt.xticks(rotation=45, ha='right')
+                elif spec.get("group_by") and spec["group_by"] in df.columns:
+                    # Data has group_by column - create grouped bars
+                    group_col = spec["group_by"]
+                    pivot_df = df.pivot(index=x_col, columns=group_col, values=y_col)
+                    pivot_df.plot(kind="bar", ax=plt.gca(), width=0.8)
+                    plt.xlabel(x_col)
+                    plt.ylabel(y_col)
+                    plt.legend(title=group_col, bbox_to_anchor=(1.05, 1), loc='upper left')
+                    plt.xticks(rotation=45, ha='right')
                 else:
                     # Need to aggregate
                     agg = spec.get("agg", "mean")
                     if spec.get("group_by"):
                         grouped = df.groupby([spec["group_by"], x_col])[y_col].agg(agg).reset_index()
+                        # Create grouped bar chart
+                        group_col = spec["group_by"]
+                        pivot_df = grouped.pivot(index=x_col, columns=group_col, values=y_col)
+                        pivot_df.plot(kind="bar", ax=plt.gca(), width=0.8)
+                        plt.xlabel(x_col)
+                        plt.ylabel(f"{agg}({y_col})")
+                        plt.legend(title=group_col, bbox_to_anchor=(1.05, 1), loc='upper left')
+                        plt.xticks(rotation=45, ha='right')
                     else:
                         grouped = df.groupby(x_col)[y_col].agg(agg).reset_index()
-                    
-                    # Apply top_k if specified
-                    if spec.get("top_k"):
-                        grouped = grouped.nlargest(spec["top_k"], y_col)
-                    
-                    plt.bar(grouped[x_col], grouped[y_col])
-                    plt.xlabel(x_col)
-                    plt.ylabel(f"{agg}({y_col})")
+                        
+                        # Apply top_k if specified
+                        if spec.get("top_k"):
+                            grouped = grouped.nlargest(spec["top_k"], y_col)
+                        
+                        plt.bar(grouped[x_col], grouped[y_col])
+                        plt.xlabel(x_col)
+                        plt.ylabel(f"{agg}({y_col})")
+                        plt.xticks(rotation=45, ha='right')
             else:
                 # Count
                 counts = df[x_col].value_counts()
