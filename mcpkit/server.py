@@ -23,6 +23,7 @@ from mcpkit.core import (
     repo_ops,
     schema_registry,
 )
+from mcpkit.core.guards import GuardError
 
 mcp = FastMCP("mcpkit-all-ops")
 
@@ -554,12 +555,15 @@ def kafka_consume_batch(
 
 @mcp.tool()
 def kafka_filter(
-    records: Annotated[list[dict], Field(description="List of Kafka record dicts (from kafka_consume_batch)")],
+    records: Annotated[str, Field(description="JSON string of Kafka record dicts (from kafka_consume_batch)")],
     predicate_jmes: Annotated[str, Field(description="JMESPath expression (evaluates to truthy to include record)")],
 ) -> KafkaFilterResponse:
     """Filter Kafka records using JMESPath predicate."""
+    records_list = _parse_list_param(records, [])
+    if not isinstance(records_list, list):
+        raise GuardError(f"records must be a list, got {type(records_list)}")
     filtered = []
-    for record in records:
+    for record in records_list:
         try:
             result = json_tools.jq_transform(record, predicate_jmes)
             if result.get("result"):
@@ -590,13 +594,16 @@ def kafka_flatten(
 
 @mcp.tool()
 def kafka_groupby_key(
-    records: Annotated[list[dict], Field(description="List of Kafka record dicts")],
+    records: Annotated[str, Field(description="JSON string of Kafka record dicts")],
     key_jmes: Annotated[str, Field(description="JMESPath expression to extract grouping key")],
     max_groups: Annotated[int, Field(description="Maximum number of groups to return. Default: 200")] = 200,
 ) -> KafkaGroupResponse:
     """Group Kafka records by key extracted via JMESPath."""
+    records_list = _parse_list_param(records, [])
+    if not isinstance(records_list, list):
+        raise GuardError(f"records must be a list, got {type(records_list)}")
     groups = {}
-    for record in records:
+    for record in records_list:
         try:
             key = json_tools.jq_transform(record, key_jmes).get("result")
             if key is not None:
@@ -835,22 +842,28 @@ def event_fingerprint(
 
 @mcp.tool()
 def dedupe_by_id(
-    records: Annotated[list[dict], Field(description="List of record dicts")],
+    records: Annotated[str, Field(description="JSON string of record dicts")],
     id_jmes: Annotated[str, Field(description="JMESPath expression to extract ID")],
 ) -> DedupeResponse:
     """Deduplicate records by extracting ID using JMESPath."""
-    result = json_tools.dedupe_by_id(records, id_jmes)
+    records_list = _parse_list_param(records, [])
+    if not isinstance(records_list, list):
+        raise GuardError(f"records must be a list, got {type(records_list)}")
+    result = json_tools.dedupe_by_id(records_list, id_jmes)
     return DedupeResponse(**result)
 
 
 @mcp.tool()
 def event_correlate(
-    batches: Annotated[list[list[dict]], Field(description="List of batches, each batch is a list of record dicts")],
+    batches: Annotated[str, Field(description="JSON string of batches, each batch is a list of record dicts")],
     join_key_jmes: Annotated[str, Field(description="JMESPath expression to extract join key")],
     timestamp_field: Annotated[str, Field(description="Field name containing timestamp (default: \"timestamp\")")] = "timestamp",
 ) -> CorrelateResponse:
     """Correlate events across batches using join key and timestamp."""
-    result = json_tools.event_correlate(batches, join_key_jmes, timestamp_field)
+    batches_list = _parse_list_param(batches, [])
+    if not isinstance(batches_list, list):
+        raise GuardError(f"batches must be a list, got {type(batches_list)}")
+    result = json_tools.event_correlate(batches_list, join_key_jmes, timestamp_field)
     correlated = [CorrelatedEvent(**c) for c in result["correlated"]]
     return CorrelateResponse(correlated=correlated, correlation_count=result["correlation_count"])
 
@@ -908,11 +921,14 @@ def pandas_join(
 @mcp.tool()
 def pandas_filter_query(
     dataset_id: Annotated[str, Field(description="Input dataset ID")],
-    filters: Annotated[list[dict], Field(description="List of filter dicts, each with: \"column\" (str), \"op\" (str: ==, !=, <, <=, >, >=, in, contains, startswith, endswith), \"value\" (any)")],
+    filters: Annotated[str, Field(description="JSON string of filter dicts, each with: {\"column\": str, \"op\": str (==, !=, <, <=, >, >=, in, contains, startswith, endswith), \"value\": any}")],
     out_dataset_id: Annotated[Optional[str], Field(description="Optional output dataset ID (auto-generated if None)")] = None,
 ) -> DatasetOperationResponse:
     """Filter dataset using query conditions."""
-    result = pandas_ops.pandas_filter_query(dataset_id, filters, out_dataset_id)
+    filters_list = _parse_list_param(filters, [])
+    if not isinstance(filters_list, list):
+        raise GuardError(f"filters must be a list, got {type(filters_list)}")
+    result = pandas_ops.pandas_filter_query(dataset_id, filters_list, out_dataset_id)
     return DatasetOperationResponse(**result)
 
 
