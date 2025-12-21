@@ -1048,14 +1048,16 @@ def polars_export(
 @mcp.tool()
 def duckdb_query_local(
     sql: Annotated[str, Field(description="SQL query string")],
-    sources: Annotated[Optional[Union[list[dict], str]], BeforeValidator(_list_validator), Field(description="Optional list of source definitions: {\"name\": str, \"dataset_id\": str} for registry datasets OR {\"name\": str, \"path\": str, \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"} for files")] = None,
+    sources: Annotated[Optional[str], Field(description="Optional JSON string of source definitions: [{\"name\": str, \"dataset_id\": str}] for registry datasets OR [{\"name\": str, \"path\": str, \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"}] for files")] = None,
     max_rows: Annotated[Optional[int], Field(description="Optional max rows to return. Default: MCPKIT_MAX_ROWS")] = None,
 ) -> QueryResultResponse:
     """Execute SQL query on local sources (DuckDB)."""
     max_rows = _to_int(max_rows, None)
-    # Ensure sources is parsed (fallback if BeforeValidator didn't run)
-    sources = _parse_list_param(sources, None)
-    result = duckdb_ops.duckdb_query_local(sql, sources, max_rows)
+    # Parse sources from JSON string
+    sources_list = None
+    if sources:
+        sources_list = _parse_list_param(sources, None)
+    result = duckdb_ops.duckdb_query_local(sql, sources_list, max_rows)
     return QueryResultResponse(**result)
 
 

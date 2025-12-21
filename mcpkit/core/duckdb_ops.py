@@ -69,18 +69,12 @@ def duckdb_query_local(
                         pass  # Ignore if view doesn't exist
                     # Create view
                     view_sql = f"CREATE VIEW {name} AS SELECT * FROM read_parquet('{abs_path}')"
-                    try:
-                        conn.execute(view_sql)
-                    except Exception as e:
-                        raise GuardError(f"Failed to create view {name} from {abs_path}: {e}")
-                    # Verify view was created
-                    try:
-                        views = conn.execute("SHOW TABLES").fetchall()
-                        view_names = [v[0] if isinstance(v, tuple) else v for v in views]
-                        if name not in view_names:
-                            raise GuardError(f"View {name} was not created successfully. Available views: {view_names}")
-                    except Exception as e:
-                        raise GuardError(f"Failed to verify view {name} creation: {e}")
+                    conn.execute(view_sql)
+                    # Verify view was created immediately
+                    views_check = conn.execute("SHOW TABLES").fetchall()
+                    view_names = [v[0] if isinstance(v, tuple) else v for v in views_check]
+                    if name not in view_names:
+                        raise GuardError(f"View {name} creation failed. Available views: {view_names}, SQL: {view_sql}")
                 elif "path" in source and "format" in source:
                     # Load from file
                     path = source["path"]
@@ -99,6 +93,26 @@ def duckdb_query_local(
                     raise GuardError("Source must have either 'dataset_id' or 'path' and 'format'")
         
         # Execute query and get columns
+        # If query references a table/view that doesn't exist and no sources were provided, give helpful error
+        if not sources and sql.upper().count('FROM') > 0:
+            # Try to extract table names from SQL to give better error
+            import re
+            from_match = re.search(r'FROM\s+(\w+)', sql, re.IGNORECASE)
+            if from_match:
+                table_name = from_match.group(1)
+                # Check if it's a system table
+                system_tables = ['pg_tables', 'pg_constraint', 'information_schema']
+                if table_name.lower() not in system_tables:
+                    # List available views
+                    try:
+                        views = conn.execute("SHOW TABLES").fetchall()
+                        view_names = [v[0] if isinstance(v, tuple) else v for v in views] if views else []
+                        raise GuardError(f"Table/view '{table_name}' does not exist. No sources provided to create it. Available views: {view_names}. Provide 'sources' parameter to register datasets as views.")
+                    except GuardError:
+                        raise
+                    except Exception:
+                        raise GuardError(f"Table/view '{table_name}' does not exist. Provide 'sources' parameter to register datasets as views.")
+        
         cursor = conn.execute(sql)
         
         # Get columns from cursor description (available before fetchall)
