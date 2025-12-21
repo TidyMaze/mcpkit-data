@@ -68,24 +68,27 @@ def evidence_bundle_plus(
     Generate evidence bundle: dataset info, describe, sample rows, exported files.
     Returns dict with artifact paths.
     """
+    from .registry import dataset_info
+    
     check_filename_safe(base_filename)
     
     artifact_dir = get_artifact_dir()
     artifact_dir.mkdir(parents=True, exist_ok=True)
     
     df = load_dataset(dataset_id)
+    info = dataset_info(dataset_id)
     
-    artifacts = []
+    exported_files = []
     
     # Export parquet
     parquet_path = artifact_dir / f"{base_filename}.parquet"
     df.to_parquet(parquet_path, index=False)
-    artifacts.append(str(parquet_path))
+    exported_files.append(str(parquet_path))
     
     # Export CSV
     csv_path = artifact_dir / f"{base_filename}.csv"
     df.to_csv(csv_path, index=False)
-    artifacts.append(str(csv_path))
+    exported_files.append(str(csv_path))
     
     # Generate metadata JSON
     metadata = {
@@ -95,21 +98,26 @@ def evidence_bundle_plus(
         "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
     }
     
+    describe_dict = None
     if include_describe:
-        metadata["describe"] = df.describe().to_dict()
+        describe_dict = df.describe().to_dict()
+        metadata["describe"] = describe_dict
     
+    sample_rows_list = None
     if include_sample_rows > 0:
-        metadata["sample_rows"] = df.head(include_sample_rows).to_dict("records")
+        sample_rows_list = df.head(include_sample_rows).to_dict("records")
+        metadata["sample_rows"] = sample_rows_list
     
     json_path = artifact_dir / f"{base_filename}_metadata.json"
     with open(json_path, "w") as f:
         json.dump(metadata, f, indent=2, default=str)
-    artifacts.append(str(json_path))
+    exported_files.append(str(json_path))
     
     return {
         "dataset_id": dataset_id,
-        "base_filename": base_filename,
-        "artifacts": artifacts,
-        "artifact_count": len(artifacts),
+        "info": info,
+        "describe": describe_dict,
+        "sample_rows": sample_rows_list,
+        "exported_files": exported_files,
     }
 

@@ -7,7 +7,7 @@ name = "mcpkit-data"
 version = "0.1.0"
 description = "MCP server with data engineering tools (Kafka, Schema Registry, JDBC, AWS, pandas, polars, duckdb)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "fastmcp>=2",
     "requests",
@@ -34,6 +34,9 @@ dev = [
 ]
 integration = [
     "confluent-kafka",
+]
+ge = [
+    "great-expectations",
 ]
 
 [tool.setuptools]
