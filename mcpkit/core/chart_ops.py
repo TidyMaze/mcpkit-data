@@ -243,10 +243,14 @@ def _render_chart(df: pd.DataFrame, spec: dict, output_path: Path, output_format
                 elif spec.get("group_by") and spec["group_by"] in df.columns:
                     # Data has group_by column - create grouped bars
                     group_col = spec["group_by"]
-                    pivot_df = df.pivot(index=x_col, columns=group_col, values=y_col)
+                    # Always aggregate first to handle any duplicate (x_col, group_col) combinations
+                    # This handles cases where there are additional dimensions (e.g., isGenAI)
+                    agg = spec.get("agg", "mean")
+                    df_agg = df.groupby([x_col, group_col])[y_col].agg(agg).reset_index()
+                    pivot_df = df_agg.pivot(index=x_col, columns=group_col, values=y_col)
                     pivot_df.plot(kind="bar", ax=plt.gca(), width=0.8)
                     plt.xlabel(x_col)
-                    plt.ylabel(y_col)
+                    plt.ylabel(f"{agg}({y_col})")
                     plt.legend(title=group_col, bbox_to_anchor=(1.05, 1), loc='upper left')
                     plt.xticks(rotation=45, ha='right')
                 else:
