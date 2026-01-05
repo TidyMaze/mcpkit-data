@@ -44,9 +44,30 @@ def avro_decode(value_base64: str, schema_json: Optional[dict] = None, schema_re
     try:
         bytes_io = io.BytesIO(payload)
         decoded = fastavro.schemaless_reader(bytes_io, schema_json)
+        
+        # Convert UUID objects and other non-serializable types to strings for JSON compatibility
+        decoded = _convert_avro_types(decoded)
+        
         return {"decoded": decoded}
     except Exception as e:
         raise GuardError(f"Avro decode error: {e}")
+
+
+def _convert_avro_types(obj):
+    """Convert Avro-specific types (UUID, etc.) to JSON-serializable types."""
+    import uuid
+    
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {k: _convert_avro_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_avro_types(item) for item in obj]
+    elif isinstance(obj, bytes):
+        # Convert bytes to base64 string for JSON compatibility
+        return base64.b64encode(obj).decode("utf-8")
+    else:
+        return obj
 
 
 def protobuf_decode(

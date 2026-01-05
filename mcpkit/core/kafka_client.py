@@ -10,6 +10,69 @@ from kafka.structs import TopicPartition
 from kafka.errors import KafkaError
 
 from .guards import GuardError, cap_records, get_max_records, get_timeout_secs
+from .decode import avro_decode
+
+
+def _decode_kafka_value(value_bytes: bytes, schema_registry_url: Optional[str] = None) -> Optional[str]:
+    """
+    Decode Kafka message value, automatically detecting and decoding Avro if present.
+    
+    This function is called during Kafka consumption to decode messages immediately.
+    Avro messages are decoded using the Schema Registry before storing in the dataset.
+    
+    Args:
+        value_bytes: Raw bytes from Kafka message
+        schema_registry_url: Optional Schema Registry URL for Avro decoding.
+            If None, uses MCPKIT_SCHEMA_REGISTRY_URL env var.
+        
+    Returns:
+        JSON string of decoded value (or UTF-8 string if not Avro), or None if empty.
+        Avro messages are decoded to JSON strings during consumption.
+        
+    Raises:
+        GuardError: If Avro is detected but Schema Registry URL is not provided.
+    """
+    if not value_bytes:
+        return None
+    
+    # Ensure we have bytes, not a string
+    if isinstance(value_bytes, str):
+        # If it's already a string (shouldn't happen, but handle it)
+        # Try to detect if it's binary data that was incorrectly decoded
+        if value_bytes.startswith('\x00\x00\x00\x00') or '\x00' in value_bytes[:10]:
+            # This was binary data incorrectly decoded - we can't recover it
+            # Return as-is (will be base64 encoded later)
+            return value_bytes
+        return value_bytes
+    
+    # Check for Confluent Avro format: magic byte 0 + schema_id (4 bytes) + payload
+    if len(value_bytes) >= 5 and value_bytes[0] == 0:
+        # Use provided URL or fall back to environment variable
+        registry_url = schema_registry_url or os.getenv("MCPKIT_SCHEMA_REGISTRY_URL")
+        if registry_url:
+            # Base64 encode for avro_decode
+            value_base64 = base64.b64encode(value_bytes).decode("utf-8")
+            decoded_result = avro_decode(value_base64, schema_registry_url=registry_url)
+            decoded_data = decoded_result.get("decoded", {})
+            # Convert to JSON string
+            return json.dumps(decoded_data)
+        else:
+            # Avro detected but no Schema Registry URL provided - cannot decode
+            raise GuardError("Avro message detected but MCPKIT_SCHEMA_REGISTRY_URL not set. Provide schema_registry_url parameter or set environment variable.")
+    
+    # Not Avro format - try UTF-8 decode
+    try:
+        decoded = value_bytes.decode("utf-8", errors="strict")
+        # Check if it looks like valid UTF-8 text (not binary)
+        # If it has many control characters, it's probably binary
+        control_chars = sum(1 for c in decoded if ord(c) < 32 and c not in '\t\n\r')
+        if control_chars > len(decoded) * 0.1:  # More than 10% control chars
+            # Probably binary data, base64 encode it
+            return base64.b64encode(value_bytes).decode("utf-8")
+        return decoded
+    except (AttributeError, UnicodeDecodeError):
+        # UTF-8 decode failed - base64 encode binary data
+        return base64.b64encode(value_bytes).decode("utf-8")
 
 
 def get_kafka_config(bootstrap_servers: Optional[str] = None) -> dict:
@@ -121,7 +184,29 @@ def kafka_consume_batch(
     max_records: Optional[int] = None,
     timeout_secs: Optional[int] = None,
     bootstrap_servers: Optional[str] = None,
+    schema_registry_url: Optional[str] = None,
 ) -> dict:
+    """
+    Consume batch of records from Kafka topic and store as dataset.
+    
+    Avro messages are automatically decoded during consumption using the Schema Registry.
+    The decoded JSON is stored directly in the dataset - no base64 encoding.
+    
+    Args:
+        topic: Topic name
+        partition: Optional partition number. If None, consumes from all partitions
+        from_offset: Optional starting offset. If None, starts from beginning
+        max_records: Optional max records to consume. Default: MCPKIT_MAX_RECORDS
+        timeout_secs: Optional timeout in seconds. Default: MCPKIT_TIMEOUT_SECS
+        bootstrap_servers: Optional Kafka bootstrap servers (comma-separated).
+            If None, uses MCPKIT_KAFKA_BOOTSTRAP env var
+        schema_registry_url: Optional Schema Registry URL for Avro decoding.
+            If None, uses MCPKIT_SCHEMA_REGISTRY_URL env var.
+            Required if topic contains Avro messages.
+    
+    Returns:
+        dict with dataset_id, record_count, and columns
+    """
     """
     Consume batch of records from Kafka topic.
     Returns records with decoded key, value, and headers as UTF-8 strings.
@@ -224,7 +309,7 @@ def kafka_consume_batch(
                     if len(records) >= limit:
                         break
                     
-                    # Decode key and value as UTF-8 strings
+                    # Decode key as UTF-8 string
                     key_str = None
                     if message.key:
                         try:
@@ -232,12 +317,10 @@ def kafka_consume_batch(
                         except (AttributeError, UnicodeDecodeError):
                             key_str = None
                     
+                    # Decode value (automatically detects and decodes Avro)
                     value_str = None
                     if message.value:
-                        try:
-                            value_str = message.value.decode("utf-8", errors="replace")
-                        except (AttributeError, UnicodeDecodeError):
-                            value_str = None
+                        value_str = _decode_kafka_value(message.value, schema_registry_url=schema_registry_url)
                     
                     # Decode headers
                     headers = {}
@@ -325,10 +408,14 @@ def kafka_consume_tail(
     topic: str,
     n_messages: int = 10,
     partition: Optional[int] = None,
-    bootstrap_servers: Optional[str] = None
+    bootstrap_servers: Optional[str] = None,
+    schema_registry_url: Optional[str] = None,
 ) -> dict:
     """
     Consume last N messages from a Kafka topic (for debugging).
+    
+    Avro messages are automatically decoded during consumption using the Schema Registry.
+    The decoded JSON is stored directly in the dataset - no base64 encoding.
     
     Args:
         topic: Topic name
@@ -336,6 +423,9 @@ def kafka_consume_tail(
         partition: Optional partition number. If None, consumes from all partitions
         bootstrap_servers: Optional Kafka bootstrap servers (comma-separated).
             If None, uses MCPKIT_KAFKA_BOOTSTRAP env var
+        schema_registry_url: Optional Schema Registry URL for Avro decoding.
+            If None, uses MCPKIT_SCHEMA_REGISTRY_URL env var.
+            Required if topic contains Avro messages.
     
     Returns:
         dict with dataset_id and record_count
@@ -387,7 +477,7 @@ def kafka_consume_tail(
             
             for topic_partition, messages in message_batch.items():
                 for message in messages:
-                    # Decode key and value
+                    # Decode key as UTF-8 string
                     key_str = None
                     if message.key:
                         try:
@@ -395,12 +485,10 @@ def kafka_consume_tail(
                         except (AttributeError, UnicodeDecodeError):
                             key_str = None
                     
+                    # Decode value (automatically detects and decodes Avro)
                     value_str = None
                     if message.value:
-                        try:
-                            value_str = message.value.decode("utf-8", errors="replace")
-                        except (AttributeError, UnicodeDecodeError):
-                            value_str = None
+                        value_str = _decode_kafka_value(message.value, schema_registry_url=schema_registry_url)
                     
                     # Decode headers
                     headers = {}
@@ -689,7 +777,7 @@ def kafka_flatten_records(records: list[dict]) -> dict:
         # Key is already decoded
         flat["key"] = record.get("key")
         
-        # Parse value (assume JSON)
+        # Parse value (should be JSON string if Avro was decoded, or plain string, or base64-encoded Avro)
         value_str = record.get("value")
         if value_str:
             try:
@@ -698,10 +786,15 @@ def kafka_flatten_records(records: list[dict]) -> dict:
                     # Flatten the JSON structure
                     flat_value = _flatten_dict(value_json)
                     flat.update(flat_value)
+                elif isinstance(value_json, list):
+                    # For arrays, convert to JSON string
+                    flat["value"] = json.dumps(value_json)
                 else:
                     flat["value"] = value_str
-            except json.JSONDecodeError:
-                # Not JSON, store as string
+            except (json.JSONDecodeError, TypeError):
+                # Not JSON - should have been decoded during consumption
+                # If we see base64 here, it means decoding failed during consumption
+                # Store as-is (shouldn't happen if decoding worked properly)
                 flat["value"] = value_str
         else:
             flat["value"] = None

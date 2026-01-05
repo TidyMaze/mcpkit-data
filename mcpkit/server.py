@@ -573,6 +573,10 @@ def kafka_consume_batch(
         Optional[str],
         Field(description="Optional Kafka bootstrap servers (comma-separated). If None, uses MCPKIT_KAFKA_BOOTSTRAP env var")
     ] = None,
+    schema_registry_url: Annotated[
+        Optional[str],
+        Field(description="Optional Schema Registry URL for Avro decoding. If None, uses MCPKIT_SCHEMA_REGISTRY_URL env var")
+    ] = None,
 ) -> KafkaConsumeResponse:
     """Consume batch of records from Kafka topic and store as dataset."""
     # Convert string inputs to int (MCP client may pass strings)
@@ -580,7 +584,7 @@ def kafka_consume_batch(
     from_offset = _to_int(from_offset, None)
     max_records = _to_int(max_records, None)
     timeout_secs = _to_int(timeout_secs, None)
-    result = kafka_client.kafka_consume_batch(topic, partition, from_offset, max_records, timeout_secs, bootstrap_servers)
+    result = kafka_client.kafka_consume_batch(topic, partition, from_offset, max_records, timeout_secs, bootstrap_servers, schema_registry_url)
     return KafkaConsumeResponse(**result)
 
 
@@ -1528,11 +1532,15 @@ def kafka_consume_tail(
         Optional[str],
         Field(description="Optional Kafka bootstrap servers (comma-separated). If None, uses MCPKIT_KAFKA_BOOTSTRAP env var")
     ] = None,
+    schema_registry_url: Annotated[
+        Optional[str],
+        Field(description="Optional Schema Registry URL for Avro decoding. If None, uses MCPKIT_SCHEMA_REGISTRY_URL env var")
+    ] = None,
 ) -> KafkaConsumeResponse:
     """Consume last N messages from a Kafka topic (for debugging)."""
     n_messages = _to_int(n_messages, 10)
     partition = _to_int(partition, None)
-    result = kafka_client.kafka_consume_tail(topic, n_messages, partition, bootstrap_servers)
+    result = kafka_client.kafka_consume_tail(topic, n_messages, partition, bootstrap_servers, schema_registry_url)
     return KafkaConsumeResponse(**result)
 
 
