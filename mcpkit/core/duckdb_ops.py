@@ -41,6 +41,8 @@ def duckdb_query_local(
             for source in sources:
                 if not isinstance(source, dict):
                     raise GuardError(f"Each source must be a dict, got {type(source)}: {source}")
+                if "name" not in source:
+                    raise GuardError("Source missing required field 'name'")
                 name = source["name"]
 
                 if "dataset_id" in source:
@@ -98,28 +100,11 @@ def duckdb_query_local(
                     else:
                         raise GuardError(f"Unsupported format: {fmt}")
                 else:
-                    raise GuardError("Source must have either 'dataset_id' or 'path' and 'format'")
+                    raise GuardError("Source must have either 'dataset_id' or both 'path' and 'format'")
 
-        # Execute query and get columns
-        # If query references a table/view that doesn't exist and no sources were provided, give helpful error
-        if not sources and sql.upper().count('FROM') > 0:
-            # Try to extract table names from SQL to give better error
-            import re
-            from_match = re.search(r'FROM\s+(\w+)', sql, re.IGNORECASE)
-            if from_match:
-                table_name = from_match.group(1)
-                # Check if it's a system table
-                system_tables = ['pg_tables', 'pg_constraint', 'information_schema']
-                if table_name.lower() not in system_tables:
-                    # List available views
-                    try:
-                        views = conn.execute("SHOW TABLES").fetchall()
-                        view_names = [v[0] if isinstance(v, tuple) else v for v in views] if views else []
-                        raise GuardError(f"Table/view '{table_name}' does not exist. No sources provided to create it. Available views: {view_names}. Provide 'sources' parameter to register datasets as views.")
-                    except GuardError:
-                        raise
-                    except Exception:
-                        raise GuardError(f"Table/view '{table_name}' does not exist. Provide 'sources' parameter to register datasets as views.")
+            # Execute query and get columns
+            # Note: We don't pre-validate table names here because DuckDB has built-in functions
+            # like generate_series() that might appear in FROM clauses. Let DuckDB handle errors.
 
         cursor = conn.execute(sql)
 
