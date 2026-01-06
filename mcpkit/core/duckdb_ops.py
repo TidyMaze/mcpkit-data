@@ -15,15 +15,23 @@ def duckdb_query_local(
     max_rows: Optional[int] = None
 ) -> dict:
     """
-    Execute SQL query on local sources.
-    sources: list of {name, dataset_id} OR {name, path, format}
-    formats: parquet, csv, json, jsonl
+    Execute SQL query on local sources using DuckDB.
+
+    Args:
+        sql: SQL query string (SELECT/WITH only, read-only)
+        sources: Optional list of source dicts. Each dict has:
+            - For registry datasets: {"name": str, "dataset_id": str}
+            - For files: {"name": str, "path": str, "format": "parquet"|"csv"|"json"|"jsonl"}
+        max_rows: Optional maximum rows to return
+
+    Returns:
+        dict with keys: columns (list[str]), rows (list[list]), row_count (int)
     """
     if max_rows is None:
         max_rows = get_max_rows()
-    
+
     conn = duckdb.connect()
-    
+
     try:
         # Register sources
         if sources:
@@ -34,7 +42,7 @@ def duckdb_query_local(
                 if not isinstance(source, dict):
                     raise GuardError(f"Each source must be a dict, got {type(source)}: {source}")
                 name = source["name"]
-                
+
                 if "dataset_id" in source:
                     # Load from registry
                     dataset_id = source["dataset_id"]
@@ -57,7 +65,7 @@ def duckdb_query_local(
                                 this_file = Path(__file__).parent.parent.parent / ".datasets" / f"{dataset_id}.parquet"
                                 if this_file.exists():
                                     path = this_file
-                    
+
                     if not path or not path.exists():
                         raise GuardError(f"Dataset {dataset_id} not found. Tried: {path}")
                     # Read parquet in this connection - use absolute path
@@ -79,7 +87,7 @@ def duckdb_query_local(
                     # Load from file
                     path = source["path"]
                     fmt = source["format"].lower()
-                    
+
                     # Use CREATE VIEW to avoid connection issues
                     if fmt == "parquet":
                         conn.execute(f"CREATE VIEW {name} AS SELECT * FROM read_parquet('{str(path)}')")
@@ -91,7 +99,7 @@ def duckdb_query_local(
                         raise GuardError(f"Unsupported format: {fmt}")
                 else:
                     raise GuardError("Source must have either 'dataset_id' or 'path' and 'format'")
-        
+
         # Execute query and get columns
         # If query references a table/view that doesn't exist and no sources were provided, give helpful error
         if not sources and sql.upper().count('FROM') > 0:
@@ -112,9 +120,9 @@ def duckdb_query_local(
                         raise
                     except Exception:
                         raise GuardError(f"Table/view '{table_name}' does not exist. Provide 'sources' parameter to register datasets as views.")
-        
+
         cursor = conn.execute(sql)
-        
+
         # Get columns from cursor description (available before fetchall)
         # DuckDB description is a list of tuples: (name, type, ...)
         columns = []
@@ -123,7 +131,7 @@ def duckdb_query_local(
                 columns = [desc[0] for desc in cursor.description]
         except Exception:
             pass
-        
+
         # If columns still empty, try using df() method as fallback
         if not columns:
             try:
@@ -135,11 +143,11 @@ def duckdb_query_local(
                 result = cursor.fetchall()
         else:
             result = cursor.fetchall()
-        
+
         # Cap rows
         rows = cap_rows(result, max_rows)
         rows_list = [list(row) for row in rows]
-        
+
         return {
             "columns": columns,
             "rows": rows_list,

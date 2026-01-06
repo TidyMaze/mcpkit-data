@@ -1,9 +1,12 @@
 """MCP server with all data engineering tools."""
 
+import logging
 from typing import Annotated, Any, Optional, Union
 
 from fastmcp import FastMCP
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+logger = logging.getLogger(__name__)
 
 from mcpkit.core import (
     aws_ops,
@@ -107,7 +110,7 @@ class KafkaGroupResponse(BaseModel):
 class SchemaRegistryResponse(BaseModel):
     """Response from Schema Registry."""
     model_config = ConfigDict(populate_by_name=True)
-    
+
     schema_id: int = Field(description="Schema ID")
     subject: Optional[str] = Field(description="Subject name (if subject provided)")
     version: Optional[int] = Field(description="Schema version (if subject provided)")
@@ -143,7 +146,7 @@ class JDBCColumn(BaseModel):
 class JDBCTable(BaseModel):
     """JDBC table information."""
     model_config = ConfigDict(populate_by_name=True)
-    
+
     schema: str = Field(description="Schema name")
     table: str = Field(description="Table name")
     columns: list[JDBCColumn] = Field(description="Table columns")
@@ -293,7 +296,7 @@ class ParquetSchema(BaseModel):
 class ParquetInspectResponse(BaseModel):
     """Response for parquet inspection."""
     model_config = ConfigDict(populate_by_name=True)
-    
+
     path: str = Field(description="File path")
     num_rows: int = Field(description="Number of rows")
     num_row_groups: int = Field(description="Number of row groups")
@@ -480,6 +483,120 @@ def _list_validator(value):
     return value
 
 
+def _sources_validator(value):
+    """Pydantic validator to convert sources parameter to list of dicts.
+
+    Handles:
+    - None -> None
+    - JSON string -> parsed list of dicts
+    - dict/list (for direct Python calls) -> converted to list of dicts
+    - "[object Object]" -> clear error with solution
+    """
+    # Log the raw input to diagnose serialization vs parsing issues
+    logger.debug(
+        f"_sources_validator called with: type={type(value).__name__}, "
+        f"value={repr(value)[:200]}, "
+        f"isinstance(value, str)={isinstance(value, str)}, "
+        f"isinstance(value, dict)={isinstance(value, dict)}, "
+        f"isinstance(value, list)={isinstance(value, list)}"
+    )
+
+    if value is None:
+        logger.debug("_sources_validator: value is None, returning None")
+        return None
+
+    # Handle dict/list for direct Python calls (not via MCP)
+    # These work fine when calling the function directly
+    if isinstance(value, list):
+        logger.debug(f"_sources_validator: value is list with {len(value)} items (direct Python call)")
+        if value and not all(isinstance(item, dict) for item in value):
+            logger.warning(f"_sources_validator: list contains non-dict items: {[type(item).__name__ for item in value]}")
+            raise ValueError(f"All items in sources list must be dicts, got: {value}")
+        logger.debug(f"_sources_validator: returning list as-is: {value}")
+        return value
+
+    if isinstance(value, dict):
+        logger.debug(f"_sources_validator: value is dict (direct Python call), wrapping in list: {value}")
+        return [value]
+
+    # For MCP calls, we only accept strings (JSON)
+    # FastMCP serializes dict/list to "[object Object]" which loses data
+    if isinstance(value, str):
+        logger.debug(f"_sources_validator: value is string, length={len(value)}, content={repr(value)[:200]}")
+        if value.lower() == "null" or value == "":
+            logger.debug("_sources_validator: empty/null string, returning None")
+            return None
+
+        # Check for serialization issues - if we get [object Object], it means
+        # the MCP framework tried to serialize a dict but failed
+        # Check for FastMCP serialization failure
+        # When dict/list is passed via MCP, FastMCP converts it to "[object Object]" string
+        # WORKAROUND: Try to detect and provide helpful guidance
+        if "[object Object]" in value or value.strip() == "[object Object]":
+            logger.warning(
+                "=== SERIALIZATION ISSUE DETECTED ==="
+                f"\n  Parameter: sources"
+                f"\n  Received: '{value}' (string literal)"
+                f"\n  Issue: FastMCP serialized dict/list to '[object Object]' and lost data"
+                f"\n  Cause: Complex types (dict/list) cannot be passed directly via MCP"
+                f"\n  Workaround: Use individual parameters (source_name, source_dataset_id) OR pass JSON string"
+            )
+            raise ValueError(
+                "FastMCP cannot serialize dict/list parameters. WORKAROUNDS:\n"
+                "1. Use individual parameters: source_name='view', source_dataset_id='id'\n"
+                "2. Convert to JSON string: json.dumps([{'name': 'view', 'dataset_id': 'id'}])\n"
+                "3. Pass as JSON string: '[{\"name\": \"view\", \"dataset_id\": \"id\"}]'"
+            )
+
+        try:
+            import json
+            logger.debug(f"_sources_validator: attempting to parse JSON string: {value[:100]}")
+            parsed = json.loads(value)
+            logger.debug(f"_sources_validator: JSON parsed successfully, type={type(parsed).__name__}, value={parsed}")
+            if isinstance(parsed, dict):
+                logger.debug(f"_sources_validator: parsed dict, wrapping in list")
+                return [parsed]
+            elif isinstance(parsed, list):
+                logger.debug(f"_sources_validator: parsed list with {len(parsed)} items")
+                if parsed and not all(isinstance(item, dict) for item in parsed):
+                    logger.warning(f"_sources_validator: parsed list contains non-dict items")
+                    raise ValueError(f"All items in sources array must be dicts, got: {parsed}")
+                return parsed
+            else:
+                logger.warning(f"_sources_validator: parsed JSON is neither dict nor list: {type(parsed)}")
+                raise ValueError(f"Expected JSON object or array, got {type(parsed).__name__}")
+        except json.JSONDecodeError as e:
+            logger.error(
+                f"_sources_validator: JSON parsing failed. "
+                f"Error: {e}, "
+                f"Value: {repr(value)[:200]}, "
+                f"Value type: {type(value)}, "
+                f"Value length: {len(value) if isinstance(value, str) else 'N/A'}"
+            )
+            # If JSON parsing fails and it looks like it might be a dict that was stringified incorrectly,
+            # try to provide a better error message
+            if value.startswith("{") or "name" in value.lower() or "dataset_id" in value.lower():
+                raise ValueError(
+                    f"Invalid JSON string (PARSING ERROR): {e}. "
+                    f"Expected valid JSON like '[{{\"name\": \"view\", \"dataset_id\": \"id\"}}]'. "
+                    f"Got: {value[:100]}"
+                )
+            raise ValueError(f"Invalid JSON string (PARSING ERROR): {e}")
+
+    # If we get here, it's an unexpected type
+    logger.error(
+        f"_sources_validator: Unexpected type. "
+        f"Type: {type(value).__name__}, "
+        f"Value: {repr(value)[:200]}, "
+        f"MRO: {type(value).__mro__ if hasattr(type(value), '__mro__') else 'N/A'}"
+    )
+    raise ValueError(
+        f"Sources must be a JSON string (for MCP calls) or dict/list (for direct Python calls). "
+        f"Got: {type(value).__name__} = {repr(value)[:200]}. "
+        f"For MCP: pass as JSON string like '[{{\"name\": \"view\", \"dataset_id\": \"id\"}}]'"
+    )
+
+
 def _int_validator(value):
     """Pydantic validator to convert string to int for Optional[int] parameters."""
     if value is None:
@@ -616,11 +733,11 @@ def kafka_flatten(
 ) -> dict:
     """
     Flatten Kafka records from a dataset generically.
-    
+
     Parses JSON values and flattens nested structures into columns.
     Works with any Kafka event structure. Input dataset should contain Kafka records
     with decoded key, value, and headers.
-    
+
     Returns:
         dict with dataset_id, columns, rows, and record_count.
     """
@@ -853,37 +970,37 @@ def jq_transform(
 ) -> TransformResponse:
     """
     Transform data using JMESPath expression.
-    
+
     If data is a JSON string, it will be automatically parsed.
     JMESPath is a query language for JSON (similar to jq).
-    
+
     **Common Expressions:**
     - Extract field: `"id"` or `"product.id"` (nested)
     - Array element: `"products[0]"` (first element)
     - Array projection: `"products[*].id"` (all IDs)
     - Filter: `"items[?price > `100`]"` (items with price > 100)
     - Multiple fields: `"{id: id, name: title}"` (object projection)
-    
+
     **Examples:**
-    
+
     1. Extract nested field:
     ```python
     data = {"price": {"value": 100, "currency": "EUR"}}
     expression = "price.value"  # Returns: 100
     ```
-    
+
     2. Array projection:
     ```python
     data = {"products": [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]}
     expression = "products[*].id"  # Returns: [1, 2]
     ```
-    
+
     3. Parse JSON string:
     ```python
     data = '{"id": "123", "title": "Product"}'
     expression = "id"  # Automatically parses JSON, returns: "123"
     ```
-    
+
     See https://jmespath.org/ for full syntax reference.
     """
     result = json_tools.jq_transform(data, expression)
@@ -1088,16 +1205,16 @@ def pandas_parse_json_column(
 ) -> DatasetOperationResponse:
     """
     Parse JSON strings from a column into structured columns.
-    
+
     This tool parses JSON strings stored as text in a column and extracts
     their fields as new columns. Useful for working with nested JSON data
     from Kafka events, API responses, or database JSONB columns.
-    
+
     **Input Format:**
     - Column contains JSON strings: `'{"id": "123", "title": "Product"}'`
     - Or JSON arrays: `'[{"id": "1"}, {"id": "2"}]'`
     - Or nested JSON strings in arrays: `'["{\\"id\\":\\"1\\"}"]'` (common in Kafka)
-    
+
     **Behavior:**
     - If `expand_arrays=True` and column contains JSON arrays, each array
       element becomes a separate row (cross join behavior)
@@ -1106,9 +1223,9 @@ def pandas_parse_json_column(
     - Invalid JSON strings are skipped with warning (doesn't fail entire operation)
     - Original columns are preserved (except the parsed JSON column)
     - New columns use dot notation for nested fields: `price.currency`, `price.value`
-    
+
     **Examples:**
-    
+
     1. Parse product records from Kafka events (with nested JSON strings in array):
     ```python
     # Input: column "productRecords" = '["{\\"id\\":\\"123\\",\\"title\\":\\"Product\\"}"]'
@@ -1119,7 +1236,7 @@ def pandas_parse_json_column(
         expand_arrays=True
     )
     ```
-    
+
     2. Extract specific fields from JSON:
     ```python
     pandas_parse_json_column(
@@ -1128,7 +1245,7 @@ def pandas_parse_json_column(
         target_columns=["userId", "timestamp", "action", "price.value", "price.currency"]
     )
     ```
-    
+
     3. Parse single JSON object per row:
     ```python
     pandas_parse_json_column(
@@ -1137,12 +1254,12 @@ def pandas_parse_json_column(
         expand_arrays=False
     )
     ```
-    
+
     **Returns:**
     - New dataset with parsed JSON fields as columns
     - Original columns are preserved (except parsed column)
     - New columns use dot notation for nested fields
-    
+
     **Error Handling:**
     - Raises `GuardError` if column doesn't exist
     - Skips invalid JSON with warning (doesn't fail entire operation)
@@ -1209,59 +1326,159 @@ def polars_export(
 
 @mcp.tool()
 def duckdb_query_local(
-    sql: Annotated[str, Field(description="SQL query string")],
-    sources: Annotated[Optional[str], Field(description="Optional JSON string of source definitions: [{\"name\": str, \"dataset_id\": str}] for registry datasets OR [{\"name\": str, \"path\": str, \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"}] for files. Example: '[{\"name\": \"events\", \"dataset_id\": \"kafka_events\"}]'")] = None,
-    max_rows: Annotated[Optional[int], Field(description="Optional max rows to return. Default: MCPKIT_MAX_ROWS")] = None,
+    sql: Annotated[str, Field(description="SQL query string (SELECT/WITH only, read-only queries)")],
+    sources: Annotated[Optional[str], BeforeValidator(_sources_validator), Field(description="Source definitions as JSON string. Format: '[{\"name\": \"view_name\", \"dataset_id\": \"dataset_id\"}]' for registry datasets OR '[{\"name\": \"view_name\", \"path\": \"/path/to/file\", \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"}]' for files. Example: '[{\"name\": \"events\", \"dataset_id\": \"kafka_events\"}]'. WORKAROUND: If you have a dict/list, convert to JSON first: json.dumps([{\"name\": \"view\", \"dataset_id\": \"id\"}])")] = None,
+    # Alternative: single source parameters (workaround for MCP serialization)
+    source_name: Annotated[Optional[str], Field(description="Alternative: single source view name (use with source_dataset_id or source_path+source_format)")] = None,
+    source_dataset_id: Annotated[Optional[str], Field(description="Alternative: single source dataset_id (use with source_name)")] = None,
+    source_path: Annotated[Optional[str], Field(description="Alternative: single source file path (use with source_name and source_format)")] = None,
+    source_format: Annotated[Optional[str], Field(description="Alternative: single source file format: parquet, csv, json, jsonl (use with source_name and source_path)")] = None,
+    max_rows: Annotated[Optional[int], Field(description="Optional maximum number of rows to return. Default: MCPKIT_MAX_ROWS environment variable (default: 200)")] = None,
 ) -> QueryResultResponse:
     """
-    Execute SQL query on local sources (DuckDB).
-    
-    This tool allows you to run SQL queries on datasets registered as views.
+    Execute SQL query on local sources using DuckDB.
+
+    This tool allows you to run read-only SQL queries (SELECT, WITH) on datasets registered as views.
     Sources can be datasets from the registry or files from disk.
-    
+
+    **Parameters:**
+    - `sql`: SQL query string (SELECT/WITH statements only, read-only)
+    - `sources`: Optional JSON string array of source definitions to register as views
+    - `max_rows`: Optional maximum rows to return (default: MCPKIT_MAX_ROWS env var, or 200)
+
     **Source Format:**
-    - Registry dataset: `[{"name": "view_name", "dataset_id": "dataset_id"}]`
-    - File: `[{"name": "view_name", "path": "/path/to/file", "format": "parquet"}]`
-    
-    **Supported Formats:**
-    - parquet, csv, json, jsonl
-    
+    Sources must be a JSON string array. Each source object can be one of:
+
+    1. **Registry dataset**: `{"name": "view_name", "dataset_id": "dataset_id"}`
+       - Registers a dataset from the registry as a view
+       - Example: `{"name": "events", "dataset_id": "kafka_events"}`
+
+    2. **File source**: `{"name": "view_name", "path": "/path/to/file", "format": "parquet"}`
+       - Registers a file as a view
+       - Supported formats: `parquet`, `csv`, `json`, `jsonl`
+       - Example: `{"name": "data", "path": "/tmp/data.parquet", "format": "parquet"}`
+
+    **Supported File Formats:**
+    - `parquet`: Parquet files
+    - `csv`: CSV files
+    - `json`: JSON files
+    - `jsonl`: JSON Lines files
+
+    **Return Value:**
+    Returns a `QueryResultResponse` with:
+    - `columns`: List of column names (list[str])
+    - `rows`: List of rows, each row is a list of values (list[list])
+    - `row_count`: Number of rows returned (int)
+
     **Examples:**
-    
-    1. Query a registered dataset:
+
+    1. Simple query without sources:
+    ```sql
+    SELECT 1 as a, 'hello' as b
+    ```
+
+    2. Query a registered dataset:
     ```sql
     SELECT * FROM events WHERE projectId = 23 LIMIT 10
     ```
-    With sources: `[{"name": "events", "dataset_id": "kafka_events"}]`
-    
-    2. Query multiple datasets:
+    With sources: `'[{"name": "events", "dataset_id": "kafka_events"}]'`
+
+    3. Query multiple datasets with JOIN:
     ```sql
     SELECT a.id, b.name FROM dataset_a a JOIN dataset_b b ON a.id = b.id
     ```
-    With sources: `[{"name": "dataset_a", "dataset_id": "a"}, {"name": "dataset_b", "dataset_id": "b"}]`
-    
-    3. Query a file:
+    With sources: `'[{"name": "dataset_a", "dataset_id": "a"}, {"name": "dataset_b", "dataset_id": "b"}]'`
+
+    4. Query a file:
     ```sql
     SELECT * FROM data WHERE value > 100
     ```
-    With sources: `[{"name": "data", "path": "/path/to/data.parquet", "format": "parquet"}]`
+    With sources: `'[{"name": "data", "path": "/path/to/data.parquet", "format": "parquet"}]'`
+
+    5. Query with aggregation:
+    ```sql
+    SELECT projectId, COUNT(*) as count FROM events GROUP BY projectId
+    ```
+    With sources: `'[{"name": "events", "dataset_id": "kafka_events"}]'`
+
+    **Error Handling:**
+    - If a table/view doesn't exist and no sources provided, returns helpful error with available views
+    - If dataset_id not found, lists attempted paths
+    - If JSON parsing fails, provides clear error message with expected format
+
+    **Workarounds for MCP Serialization:**
+
+    FastMCP cannot serialize dict/list parameters directly. Use one of these workarounds:
+
+    1. **Individual parameters** (recommended for single source):
+       - Use `source_name` + `source_dataset_id` for registry datasets
+       - Use `source_name` + `source_path` + `source_format` for files
+       - Example: `source_name="events", source_dataset_id="kafka_events"`
+
+    2. **JSON string** (for multiple sources):
+       - Pass `sources` as JSON string: `'[{"name": "view", "dataset_id": "id"}]'`
+       - Convert dict to JSON: `json.dumps([{"name": "view", "dataset_id": "id"}])`
+
+    3. **Direct Python calls** (not via MCP):
+       - Can pass dict/list directly when calling the function in Python
     """
     max_rows = _to_int(max_rows, None)
-    # Parse sources from JSON string
-    sources_list = None
-    if sources:
-        try:
-            sources_list = _parse_list_param(sources, None)
-            if sources_list is not None and not isinstance(sources_list, list):
-                raise GuardError(
-                    f"sources must be a list, got {type(sources_list)}. "
-                    f"Expected JSON array format: [{{\"name\": \"view_name\", \"dataset_id\": \"id\"}}]"
-                )
-        except Exception as e:
+
+    # WORKAROUND: If sources is None but individual source parameters are provided,
+    # construct sources from individual parameters
+    if sources is None and source_name:
+        logger.debug(f"duckdb_query_local: constructing sources from individual parameters")
+        if source_dataset_id:
+            sources = f'[{{"name": "{source_name}", "dataset_id": "{source_dataset_id}"}}]'
+            logger.debug(f"duckdb_query_local: constructed sources from dataset_id: {sources}")
+        elif source_path and source_format:
+            sources = f'[{{"name": "{source_name}", "path": "{source_path}", "format": "{source_format}"}}]'
+            logger.debug(f"duckdb_query_local: constructed sources from file: {sources}")
+        else:
             raise GuardError(
-                f"Failed to parse sources parameter: {e}. "
-                f"Expected JSON string format: [{{\"name\": \"view_name\", \"dataset_id\": \"id\"}}]"
+                "When using individual source parameters, provide either: "
+                "(source_name + source_dataset_id) OR (source_name + source_path + source_format)"
             )
+
+    # Log what we receive after validation
+    logger.debug(
+        f"duckdb_query_local called with: "
+        f"sql length={len(sql)}, "
+        f"sources type={type(sources).__name__ if sources is not None else 'None'}, "
+        f"sources value={repr(sources)[:200] if sources is not None else 'None'}, "
+        f"max_rows={max_rows}"
+    )
+
+    # If sources is a string (JSON), validate and convert to list
+    # The validator should have done this, but if we constructed it from individual params,
+    # we need to validate it ourselves
+    if sources is not None and isinstance(sources, str):
+        sources_list = _sources_validator(sources)
+    else:
+        sources_list = sources
+    if sources_list is not None:
+        logger.debug(f"duckdb_query_local: sources_list after validator: {sources_list}")
+        if not isinstance(sources_list, list):
+            raise GuardError(
+                f"sources must be a list, got {type(sources_list)}. "
+                f"This should have been handled by the validator."
+            )
+
+        # Validate each source is a dict with required fields
+        for i, source in enumerate(sources_list):
+            if not isinstance(source, dict):
+                raise GuardError(
+                    f"Source {i} must be a dict, got {type(source)}: {source}"
+                )
+            if "name" not in source:
+                raise GuardError(
+                    f"Source {i} missing required field 'name'. Got: {source}"
+                )
+            if "dataset_id" not in source and ("path" not in source or "format" not in source):
+                raise GuardError(
+                    f"Source {i} must have either 'dataset_id' or both 'path' and 'format'. Got: {source}"
+                )
+
     result = duckdb_ops.duckdb_query_local(sql, sources_list, max_rows)
     return QueryResultResponse(**result)
 
@@ -1403,7 +1620,7 @@ def dataset_to_chart(
 ) -> ChartResponse:
     """
     Load dataset, auto-detect schema, pick chart type, render to artifact.
-    
+
     Exactly one of dataset_id or path must be provided.
     Supports csv, parquet, jsonl, and avro container files.
     Auto-detects column types and picks appropriate chart type.
@@ -1732,35 +1949,35 @@ def great_expectations_check(
         import great_expectations as ge
     except ImportError:
         raise RuntimeError("Great Expectations not installed. Install with: pip install great-expectations")
-    
+
     from mcpkit.core.registry import load_dataset
-    
+
     df = load_dataset(dataset_id)
     context = ge.get_context()
-    
+
     try:
         # Use Fluent API with pandas datasource - create fresh for each validation
         datasource_name = f"pandas_{dataset_id}"
-        
+
         # Remove existing datasource if it exists
         try:
             existing_ds = context.data_sources.get(datasource_name)
             context.data_sources.delete(datasource_name)
         except (KeyError, ValueError, AttributeError):
             pass
-        
+
         # Create new datasource and asset
         pandas_ds = context.data_sources.add_pandas(name=datasource_name)
         asset = pandas_ds.add_dataframe_asset(name="dataframe_asset")
-        
+
         # Build batch request with dataframe
         batch_request = asset.build_batch_request(options={"dataframe": df})
-        
+
         # Create expectation suite directly
         from great_expectations.core import ExpectationSuite
         suite_name = f"suite_{dataset_id}"
         suite = ExpectationSuite(name=suite_name)
-        
+
         # Add expectations from suite dict
         from great_expectations.expectations.expectation_configuration import ExpectationConfiguration
         expectations = expectation_suite.get("expectations", [])
@@ -1770,15 +1987,15 @@ def great_expectations_check(
                 kwargs=exp.get("kwargs", {})
             )
             suite.add_expectation_configuration(exp_config)
-        
+
         # Get validator and validate
         validator = context.get_validator(
             batch_request=batch_request,
             expectation_suite=suite
         )
-        
+
         validation_result = validator.validate()
-        
+
         # Build result object - convert numpy types to native Python types
         def convert_to_native(obj):
             """Convert numpy types to native Python types for serialization."""
@@ -1798,7 +2015,7 @@ def great_expectations_check(
             elif hasattr(obj, 'item'):  # numpy scalar
                 return obj.item()
             return obj
-        
+
         results = []
         for r in validation_result.results:
             # Convert result dict
@@ -1810,10 +2027,10 @@ def great_expectations_check(
                     result=result_dict,
                 )
             )
-        
+
         # Convert statistics
         stats = convert_to_native(dict(validation_result.statistics))
-        
+
         return GEValidationResponse(
             dataset_id=dataset_id,
             success=bool(validation_result.success),
