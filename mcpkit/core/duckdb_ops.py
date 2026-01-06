@@ -145,8 +145,24 @@ def duckdb_query_local(
             "rows": rows_list,
             "row_count": len(rows_list),
         }
+    except GuardError:
+        raise  # Re-raise GuardError as-is
     except Exception as e:
-        raise GuardError(f"DuckDB query failed: {e}")
+        # Provide more context in error message
+        error_msg = str(e)
+        if "does not exist" in error_msg.lower() or "not found" in error_msg.lower():
+            # Try to list available views/tables for better error message
+            try:
+                views = conn.execute("SHOW TABLES").fetchall()
+                view_names = [v[0] if isinstance(v, tuple) else v for v in views] if views else []
+                if view_names:
+                    raise GuardError(
+                        f"DuckDB query failed: {error_msg}. "
+                        f"Available views/tables: {', '.join(view_names)}"
+                    )
+            except Exception:
+                pass  # If we can't get views, just use original error
+        raise GuardError(f"DuckDB query failed: {error_msg}")
     finally:
         conn.close()
 

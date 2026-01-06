@@ -680,6 +680,29 @@ pytest
 
 All tests use mocks/stubs. No real connections needed! ✅
 
+### 🔄 Reloading MCP Server After Code Changes
+
+When you modify MCP tool code (e.g., `mcpkit/core/*.py` or `mcpkit/server.py`), Cursor needs to reload the MCP server to pick up your changes.
+
+**Quick reload:**
+```bash
+./reload_mcp_server.sh
+```
+
+This script modifies your Cursor MCP config file to trigger an automatic reload. If automatic reload doesn't work, restart Cursor manually.
+
+**When to reload:**
+- ✅ After editing tool implementations in `mcpkit/core/*.py`
+- ✅ After adding/modifying tools in `mcpkit/server.py`
+- ✅ After changing tool documentation or parameters
+- ❌ Not needed for config changes (environment variables)
+
+**Manual reload alternative:**
+1. Open Cursor settings → MCP
+2. Temporarily disable the `mcpkit-data` server
+3. Re-enable it
+4. Cursor will reload the server
+
 ---
 
 ## 🤝 Contributing

@@ -224,6 +224,7 @@ class DedupeResponse(BaseModel):
     unique_count: int = Field(description="Number of unique records")
     original_count: int = Field(description="Original number of records")
     records: list[dict] = Field(description="Deduplicated records (keeps first occurrence)")
+    skipped_count: Optional[int] = Field(default=None, description="Number of records skipped due to ID extraction failure (if any)")
 
 
 class CorrelatedEvent(BaseModel):
@@ -847,10 +848,44 @@ def s3_list_prefix(
 
 @mcp.tool()
 def jq_transform(
-    data: Annotated[dict | list | str | int | float | bool | None, Field(description="Input data (dict, list, or primitive)")],
-    expression: Annotated[str, Field(description="JMESPath expression")],
+    data: Annotated[dict | list | str | int | float | bool | None, Field(description="Input data (dict, list, JSON string, or primitive)")],
+    expression: Annotated[str, Field(description="JMESPath expression (e.g., \"products[0].id\", \"items[*].name\", \"price.value\")")],
 ) -> TransformResponse:
-    """Transform data using JMESPath expression."""
+    """
+    Transform data using JMESPath expression.
+    
+    If data is a JSON string, it will be automatically parsed.
+    JMESPath is a query language for JSON (similar to jq).
+    
+    **Common Expressions:**
+    - Extract field: `"id"` or `"product.id"` (nested)
+    - Array element: `"products[0]"` (first element)
+    - Array projection: `"products[*].id"` (all IDs)
+    - Filter: `"items[?price > `100`]"` (items with price > 100)
+    - Multiple fields: `"{id: id, name: title}"` (object projection)
+    
+    **Examples:**
+    
+    1. Extract nested field:
+    ```python
+    data = {"price": {"value": 100, "currency": "EUR"}}
+    expression = "price.value"  # Returns: 100
+    ```
+    
+    2. Array projection:
+    ```python
+    data = {"products": [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]}
+    expression = "products[*].id"  # Returns: [1, 2]
+    ```
+    
+    3. Parse JSON string:
+    ```python
+    data = '{"id": "123", "title": "Product"}'
+    expression = "id"  # Automatically parses JSON, returns: "123"
+    ```
+    
+    See https://jmespath.org/ for full syntax reference.
+    """
     result = json_tools.jq_transform(data, expression)
     return TransformResponse(**result)
 
@@ -1044,6 +1079,82 @@ def pandas_count_distinct(
 
 
 @mcp.tool()
+def pandas_parse_json_column(
+    dataset_id: Annotated[str, Field(description="Input dataset ID")],
+    column: Annotated[str, Field(description="Column name containing JSON strings to parse")],
+    expand_arrays: Annotated[bool, Field(description="If True, expand JSON arrays into multiple rows (cross join). If False, parse as single object per row. Default: False")] = False,
+    target_columns: Annotated[Optional[Union[list[str], str]], BeforeValidator(_list_validator), Field(description="Optional list of JSON keys to extract as columns. Use dot notation for nested fields: [\"id\", \"title\", \"price.value\", \"price.currency\"]. If None, extracts all top-level keys. Example: [\"id\", \"title\"]")] = None,
+    out_dataset_id: Annotated[Optional[str], Field(description="Optional output dataset ID (auto-generated if None)")] = None,
+) -> DatasetOperationResponse:
+    """
+    Parse JSON strings from a column into structured columns.
+    
+    This tool parses JSON strings stored as text in a column and extracts
+    their fields as new columns. Useful for working with nested JSON data
+    from Kafka events, API responses, or database JSONB columns.
+    
+    **Input Format:**
+    - Column contains JSON strings: `'{"id": "123", "title": "Product"}'`
+    - Or JSON arrays: `'[{"id": "1"}, {"id": "2"}]'`
+    - Or nested JSON strings in arrays: `'["{\\"id\\":\\"1\\"}"]'` (common in Kafka)
+    
+    **Behavior:**
+    - If `expand_arrays=True` and column contains JSON arrays, each array
+      element becomes a separate row (cross join behavior)
+    - If `expand_arrays=False`, arrays are parsed but kept as single value
+    - Null/empty strings are skipped
+    - Invalid JSON strings are skipped with warning (doesn't fail entire operation)
+    - Original columns are preserved (except the parsed JSON column)
+    - New columns use dot notation for nested fields: `price.currency`, `price.value`
+    
+    **Examples:**
+    
+    1. Parse product records from Kafka events (with nested JSON strings in array):
+    ```python
+    # Input: column "productRecords" = '["{\\"id\\":\\"123\\",\\"title\\":\\"Product\\"}"]'
+    # With expand_arrays=True: creates one row per product
+    pandas_parse_json_column(
+        dataset_id="kafka_events",
+        column="productRecords",
+        expand_arrays=True
+    )
+    ```
+    
+    2. Extract specific fields from JSON:
+    ```python
+    pandas_parse_json_column(
+        dataset_id="events",
+        column="metadata",
+        target_columns=["userId", "timestamp", "action", "price.value", "price.currency"]
+    )
+    ```
+    
+    3. Parse single JSON object per row:
+    ```python
+    pandas_parse_json_column(
+        dataset_id="api_responses",
+        column="response",
+        expand_arrays=False
+    )
+    ```
+    
+    **Returns:**
+    - New dataset with parsed JSON fields as columns
+    - Original columns are preserved (except parsed column)
+    - New columns use dot notation for nested fields
+    
+    **Error Handling:**
+    - Raises `GuardError` if column doesn't exist
+    - Skips invalid JSON with warning (doesn't fail entire operation)
+    - Returns error if all JSON is invalid (no valid rows found)
+    """
+    result = pandas_ops.pandas_parse_json_column(
+        dataset_id, column, expand_arrays, target_columns, out_dataset_id
+    )
+    return DatasetOperationResponse(**result)
+
+
+@mcp.tool()
 def pandas_export(
     dataset_id: Annotated[str, Field(description="Dataset ID")],
     format: Annotated[str, Field(description="Export format: \"csv\", \"json\", \"parquet\", \"excel\"")],
@@ -1099,15 +1210,58 @@ def polars_export(
 @mcp.tool()
 def duckdb_query_local(
     sql: Annotated[str, Field(description="SQL query string")],
-    sources: Annotated[Optional[str], Field(description="Optional JSON string of source definitions: [{\"name\": str, \"dataset_id\": str}] for registry datasets OR [{\"name\": str, \"path\": str, \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"}] for files")] = None,
+    sources: Annotated[Optional[str], Field(description="Optional JSON string of source definitions: [{\"name\": str, \"dataset_id\": str}] for registry datasets OR [{\"name\": str, \"path\": str, \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"}] for files. Example: '[{\"name\": \"events\", \"dataset_id\": \"kafka_events\"}]'")] = None,
     max_rows: Annotated[Optional[int], Field(description="Optional max rows to return. Default: MCPKIT_MAX_ROWS")] = None,
 ) -> QueryResultResponse:
-    """Execute SQL query on local sources (DuckDB)."""
+    """
+    Execute SQL query on local sources (DuckDB).
+    
+    This tool allows you to run SQL queries on datasets registered as views.
+    Sources can be datasets from the registry or files from disk.
+    
+    **Source Format:**
+    - Registry dataset: `[{"name": "view_name", "dataset_id": "dataset_id"}]`
+    - File: `[{"name": "view_name", "path": "/path/to/file", "format": "parquet"}]`
+    
+    **Supported Formats:**
+    - parquet, csv, json, jsonl
+    
+    **Examples:**
+    
+    1. Query a registered dataset:
+    ```sql
+    SELECT * FROM events WHERE projectId = 23 LIMIT 10
+    ```
+    With sources: `[{"name": "events", "dataset_id": "kafka_events"}]`
+    
+    2. Query multiple datasets:
+    ```sql
+    SELECT a.id, b.name FROM dataset_a a JOIN dataset_b b ON a.id = b.id
+    ```
+    With sources: `[{"name": "dataset_a", "dataset_id": "a"}, {"name": "dataset_b", "dataset_id": "b"}]`
+    
+    3. Query a file:
+    ```sql
+    SELECT * FROM data WHERE value > 100
+    ```
+    With sources: `[{"name": "data", "path": "/path/to/data.parquet", "format": "parquet"}]`
+    """
     max_rows = _to_int(max_rows, None)
     # Parse sources from JSON string
     sources_list = None
     if sources:
-        sources_list = _parse_list_param(sources, None)
+        try:
+            sources_list = _parse_list_param(sources, None)
+            if sources_list is not None and not isinstance(sources_list, list):
+                raise GuardError(
+                    f"sources must be a list, got {type(sources_list)}. "
+                    f"Expected JSON array format: [{{\"name\": \"view_name\", \"dataset_id\": \"id\"}}]"
+                )
+        except Exception as e:
+            raise GuardError(
+                f"Failed to parse sources parameter: {e}. "
+                f"Expected JSON string format: [{{\"name\": \"view_name\", \"dataset_id\": \"id\"}}]"
+            )
     result = duckdb_ops.duckdb_query_local(sql, sources_list, max_rows)
     return QueryResultResponse(**result)
 

@@ -1,5 +1,7 @@
 """Pandas operations."""
 
+import json
+import logging
 from typing import Optional
 
 import pandas as pd
@@ -461,4 +463,169 @@ def pandas_filter_time_range(
         result = save_dataset(df, None)
     
     return result
+
+
+def pandas_parse_json_column(
+    dataset_id: str,
+    column: str,
+    expand_arrays: bool = False,
+    target_columns: Optional[list[str]] = None,
+    out_dataset_id: Optional[str] = None
+) -> dict:
+    """
+    Parse JSON strings from a column into structured columns.
+    
+    This function parses JSON strings stored as text in a column and extracts
+    their fields as new columns. Useful for working with nested JSON data
+    from Kafka events, API responses, or database JSONB columns.
+    
+    Args:
+        dataset_id: Input dataset ID
+        column: Column name containing JSON strings to parse
+        expand_arrays: If True, expand JSON arrays into multiple rows (cross join).
+                      If False, parse as single object per row. Default: False
+        target_columns: Optional list of JSON keys to extract as columns.
+                       Use dot notation for nested fields: ["id", "price.value", "price.currency"].
+                       If None, extracts all top-level keys.
+        out_dataset_id: Optional output dataset ID (auto-generated if None)
+    
+    Returns:
+        dict with dataset_id, rows, columns
+    
+    Behavior:
+    - If expand_arrays=True and column contains JSON arrays, each array element
+      becomes a separate row (cross join behavior)
+    - If expand_arrays=False, arrays are parsed but kept as single value
+    - Null/empty strings are skipped
+    - Invalid JSON strings are skipped with warning (doesn't fail entire operation)
+    - New columns use dot notation for nested fields: price.currency, price.value
+    - Original columns are preserved
+    """
+    logger = logging.getLogger(__name__)
+    
+    df = load_dataset(dataset_id)
+    
+    if column not in df.columns:
+        raise GuardError(
+            f"Column '{column}' not found in dataset. "
+            f"Available columns: {', '.join(df.columns)}"
+        )
+    
+    parsed_rows = []
+    skipped_count = 0
+    
+    for idx, row in df.iterrows():
+        json_str = row[column]
+        
+        # Skip null/empty
+        if pd.isna(json_str) or (isinstance(json_str, str) and json_str.strip() == ""):
+            continue
+        
+        try:
+            # Parse JSON string
+            parsed = json.loads(json_str)
+            
+            if expand_arrays and isinstance(parsed, list):
+                # Expand array: each element becomes a row
+                for item in parsed:
+                    if isinstance(item, str):
+                        # Nested JSON string in array (common in Kafka events)
+                        try:
+                            item = json.loads(item)
+                        except (json.JSONDecodeError, TypeError):
+                            logger.warning(f"Row {idx}: Skipping invalid nested JSON in array")
+                            skipped_count += 1
+                            continue
+                    
+                    # Create new row with original data + parsed JSON fields
+                    new_row = row.to_dict()
+                    _flatten_json_to_row(new_row, item, target_columns)
+                    parsed_rows.append(new_row)
+            else:
+                # Single object: one row
+                new_row = row.to_dict()
+                _flatten_json_to_row(new_row, parsed, target_columns)
+                parsed_rows.append(new_row)
+                
+        except json.JSONDecodeError as e:
+            logger.warning(f"Row {idx}: Skipping invalid JSON: {e}")
+            skipped_count += 1
+            continue
+        except Exception as e:
+            logger.warning(f"Row {idx}: Error parsing JSON: {e}")
+            skipped_count += 1
+            continue
+    
+    if not parsed_rows:
+        raise GuardError(
+            f"No valid JSON found in column '{column}'. "
+            f"Skipped {skipped_count} invalid rows."
+        )
+    
+    # Create DataFrame from parsed rows
+    parsed_df = pd.DataFrame(parsed_rows)
+    
+    # Remove original JSON column (optional - could keep it)
+    if column in parsed_df.columns:
+        parsed_df = parsed_df.drop(columns=[column])
+    
+    if out_dataset_id:
+        result = save_dataset(parsed_df, out_dataset_id)
+    else:
+        result = save_dataset(parsed_df, None)
+    
+    if skipped_count > 0:
+        logger.info(f"Parsed {len(parsed_rows)} rows, skipped {skipped_count} invalid JSON rows")
+    
+    return result
+
+
+def _flatten_json_to_row(row: dict, json_obj: dict, target_columns: Optional[list[str]] = None):
+    """
+    Flatten JSON object into row dictionary.
+    
+    Args:
+        row: Row dictionary to update
+        json_obj: JSON object to flatten
+        target_columns: Optional list of keys to extract (dot notation supported)
+    """
+    if not isinstance(json_obj, dict):
+        return
+    
+    if target_columns:
+        # Extract only specified columns
+        for key_path in target_columns:
+            value = _get_nested_value(json_obj, key_path)
+            # Always add the column, even if value is None (for consistent schema)
+            row[key_path] = value
+    else:
+        # Extract all top-level keys
+        for key, value in json_obj.items():
+            if isinstance(value, dict):
+                # Flatten nested dicts with dot notation
+                for nested_key, nested_value in value.items():
+                    row[f"{key}.{nested_key}"] = nested_value
+            elif isinstance(value, (list, dict)):
+                # For arrays and nested dicts, convert to string representation
+                row[key] = json.dumps(value) if value else None
+            else:
+                row[key] = value
+
+
+def _get_nested_value(obj: dict, key_path: str):
+    """
+    Get nested value from dict using dot notation.
+    
+    Example: _get_nested_value({"price": {"value": 100}}, "price.value") -> 100
+    """
+    keys = key_path.split(".")
+    current = obj
+    
+    for key in keys:
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+        else:
+            return None
+    
+    return current
 
