@@ -14,7 +14,7 @@ from mcpkit.core.guards import (
     get_max_records,
     get_max_rows,
     get_timeout_secs,
-    validate_jdbc_query,
+    validate_db_query,
 )
 
 
@@ -110,56 +110,56 @@ def test_check_filename_safe_failure():
         check_filename_safe("test\\file.txt")
 
 
-def test_validate_jdbc_query_select():
+def test_validate_db_query_select():
     """Test valid SELECT query."""
-    query = validate_jdbc_query("SELECT * FROM table")
+    query = validate_db_query("SELECT * FROM table")
     assert query == "SELECT * FROM table"
 
 
-def test_validate_jdbc_query_with():
+def test_validate_db_query_with():
     """Test valid WITH query."""
-    query = validate_jdbc_query("WITH cte AS (SELECT 1) SELECT * FROM cte")
+    query = validate_db_query("WITH cte AS (SELECT 1) SELECT * FROM cte")
     assert "WITH" in query
 
 
-def test_validate_jdbc_query_explain():
+def test_validate_db_query_explain():
     """Test valid EXPLAIN query."""
-    query = validate_jdbc_query("EXPLAIN SELECT * FROM table")
+    query = validate_db_query("EXPLAIN SELECT * FROM table")
     assert query.startswith("EXPLAIN")
 
 
-def test_validate_jdbc_query_semicolon():
+def test_validate_db_query_semicolon():
     """Test semicolon rejection."""
     with pytest.raises(GuardError, match="semicolon"):
-        validate_jdbc_query("SELECT 1; SELECT 2")
+        validate_db_query("SELECT 1; SELECT 2")
 
 
-def test_validate_jdbc_query_drop():
+def test_validate_db_query_drop():
     """Test DROP rejection."""
     with pytest.raises(GuardError, match="DROP"):
-        validate_jdbc_query("DROP TABLE test")
+        validate_db_query("DROP TABLE test")
 
 
-def test_validate_jdbc_query_insert():
+def test_validate_db_query_insert():
     """Test INSERT rejection."""
     with pytest.raises(GuardError, match="INSERT"):
-        validate_jdbc_query("INSERT INTO test VALUES (1)")
+        validate_db_query("INSERT INTO test VALUES (1)")
 
 
-def test_validate_jdbc_query_update():
+def test_validate_db_query_update():
     """Test UPDATE rejection."""
     with pytest.raises(GuardError, match="UPDATE"):
-        validate_jdbc_query("UPDATE test SET col=1")
+        validate_db_query("UPDATE test SET col=1")
 
 
-def test_validate_jdbc_query_delete():
+def test_validate_db_query_delete():
     """Test DELETE rejection."""
     with pytest.raises(GuardError, match="DELETE"):
-        validate_jdbc_query("DELETE FROM test")
+        validate_db_query("DELETE FROM test")
 
 
-def test_validate_jdbc_query_invalid_start():
+def test_validate_db_query_invalid_start():
     """Test invalid query start."""
     with pytest.raises(GuardError):
-        validate_jdbc_query("SHOW TABLES")
+        validate_db_query("SHOW TABLES")
 

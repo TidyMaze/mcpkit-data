@@ -141,8 +141,8 @@ Query databases safely with read-only enforcement.
 
 | Tool | What it does | When to use |
 |------|-------------|-------------|
-| `jdbc_query_ro` | 🔍 Execute read-only SQL | Query any JDBC database |
-| `jdbc_introspect` | 🔎 Introspect schema | Discover tables/columns |
+| `db_query_ro` | 🔍 Execute read-only SQL | Query any database |
+| `db_introspect` | 🔎 Introspect schema | Discover tables/columns |
 
 **Safety**: Automatically blocks `DROP`, `INSERT`, `UPDATE`, `DELETE`, etc. ✅
 
@@ -442,7 +442,7 @@ I'll reconcile sales data between Athena and Postgres.
 [Step 4: pandas_from_rows] Storing Athena data...
 ✓ Dataset created: athena_sales_20251221
 
-[Step 5: jdbc_query_ro] Querying Postgres sales table...
+[Step 5: db_query_ro] Querying Postgres sales table...
 ✓ Retrieved 5,189 rows from Postgres
 
 [Step 6: pandas_from_rows] Storing Postgres data...
@@ -465,7 +465,7 @@ Discrepancies found:
 ✓ Report saved: .artifacts/sales_reconciliation_report.json
 ```
 
-**Tools used:** `athena_start_query` → `athena_poll_query` → `athena_get_results` → `pandas_from_rows` → `jdbc_query_ro` → `pandas_from_rows` → `pandas_join` → `pandas_diff_frames` → `pandas_export` → `reconcile_counts` (10 tools)
+**Tools used:** `athena_start_query` → `athena_poll_query` → `athena_get_results` → `pandas_from_rows` → `db_query_ro` → `pandas_from_rows` → `pandas_join` → `pandas_diff_frames` → `pandas_export` → `reconcile_counts` (10 tools)
 
 ---
 
@@ -639,7 +639,7 @@ I'll correlate user events across Kafka and database systems.
 [Step 2: kafka_flatten] Flattening event structure...
 ✓ Flattened to 1,000 records with 32 columns
 
-[Step 3: jdbc_query_ro] Querying user profiles...
+[Step 3: db_query_ro] Querying user profiles...
 ✓ Retrieved 850 user profiles from database
 
 [Step 4: pandas_from_rows] Storing profiles...
@@ -668,7 +668,7 @@ Session analysis:
 ✓ Exported: .artifacts/session_analysis.json
 ```
 
-**Tools used:** `kafka_consume_batch` → `kafka_flatten` → `jdbc_query_ro` → `pandas_from_rows` → `pandas_join` → `dedupe_by_id` → `event_correlate` → `pandas_groupby` → `pandas_filter_query` → `pandas_export` (10 tools)
+**Tools used:** `kafka_consume_batch` → `kafka_flatten` → `db_query_ro` → `pandas_from_rows` → `pandas_join` → `dedupe_by_id` → `event_correlate` → `pandas_groupby` → `pandas_filter_query` → `pandas_export` (10 tools)
 
 ---
 

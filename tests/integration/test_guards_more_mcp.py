@@ -47,8 +47,8 @@ def test_check_path_allowed_outside_root_mcp(mcp_client, clean_roots):
         )
 
 
-def test_validate_jdbc_query_dangerous_keywords_mcp(mcp_client, jdbc_setup):
-    """Test validate_jdbc_query with dangerous SQL keywords via MCP protocol."""
+def test_validate_db_query_dangerous_keywords_mcp(mcp_client, db_setup):
+    """Test validate_db_query with dangerous SQL keywords via MCP protocol."""
     # Test DROP, DELETE, UPDATE, INSERT are blocked
     dangerous_queries = [
         "DROP TABLE users",
@@ -61,13 +61,13 @@ def test_validate_jdbc_query_dangerous_keywords_mcp(mcp_client, jdbc_setup):
         with pytest.raises(Exception):  # Should raise GuardError
             call_tool(
                 mcp_client,
-                "jdbc_query_ro",
+                "db_query_ro",
                 query=query
             )
 
 
-def test_validate_jdbc_query_invalid_start_mcp(mcp_client, jdbc_setup):
-    """Test validate_jdbc_query with invalid query start via MCP protocol."""
+def test_validate_db_query_invalid_start_mcp(mcp_client, db_setup):
+    """Test validate_db_query with invalid query start via MCP protocol."""
     # Queries must start with SELECT, WITH, EXPLAIN SELECT, or EXPLAIN WITH
     invalid_queries = [
         "CREATE TABLE test (id INT)",
@@ -79,7 +79,7 @@ def test_validate_jdbc_query_invalid_start_mcp(mcp_client, jdbc_setup):
         with pytest.raises(Exception):  # Should raise GuardError
             call_tool(
                 mcp_client,
-                "jdbc_query_ro",
+                "db_query_ro",
                 query=query
             )
 

@@ -61,7 +61,7 @@ def test_sql_multiple_statements_guard_mcp(mcp_client):
         with pytest.raises(Exception):  # Should raise GuardError
             call_tool(
                 mcp_client,
-                "jdbc_query_ro",
+                "db_query_ro",
                 query="SELECT 1; SELECT 2"
             )
     else:
@@ -114,7 +114,7 @@ def test_sql_dangerous_keywords_guard_mcp(mcp_client):
             with pytest.raises(Exception):  # Should raise GuardError
                 call_tool(
                     mcp_client,
-                    "jdbc_query_ro",
+                    "db_query_ro",
                     query=query
                 )
     else:
@@ -139,7 +139,7 @@ def test_sql_invalid_start_guard_mcp(mcp_client):
         with pytest.raises(Exception):  # Should raise GuardError
             call_tool(
                 mcp_client,
-                "jdbc_query_ro",
+                "db_query_ro",
                 query="SHOW TABLES"
             )
     else:

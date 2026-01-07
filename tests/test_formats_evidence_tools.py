@@ -80,6 +80,6 @@ def test_evidence_bundle_plus(clean_registry, clean_artifacts):
     )
     
     result = evidence_bundle_plus("ds1", "test_bundle")
-    assert "artifacts" in result
-    assert len(result["artifacts"]) >= 3  # parquet, csv, json
+    assert "exported_files" in result
+    assert len(result["exported_files"]) >= 3  # parquet, csv, json
 

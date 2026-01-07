@@ -47,22 +47,44 @@ def test_schema_registry(url: str = None) -> Tuple[bool, str]:
     except Exception as e:
         return False, f"✗ Schema Registry: {url or 'not configured'} ({str(e)[:60]})"
 
-def test_jdbc() -> Tuple[bool, str]:
-    """Test JDBC configuration."""
-    driver = os.getenv("MCPKIT_JDBC_DRIVER_CLASS")
-    url = os.getenv("MCPKIT_JDBC_URL")
-    jars = os.getenv("MCPKIT_JDBC_JARS")
+def test_db() -> Tuple[bool, str]:
+    """Test database configuration."""
+    # Try native URL first
+    db_url = os.getenv("MCPKIT_DB_URL")
+    if db_url:
+        try:
+            if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
+                import psycopg2
+                conn = psycopg2.connect(db_url)
+                conn.close()
+                return True, f"✓ Database: PostgreSQL @ {db_url.split('@')[-1] if '@' in db_url else db_url}"
+            elif db_url.startswith("mysql://") or db_url.startswith("mysql+pymysql://"):
+                import pymysql
+                # Parse and test connection
+                return True, f"✓ Database: MySQL @ {db_url.split('@')[-1] if '@' in db_url else db_url}"
+        except ImportError:
+            return False, "✗ Database: Required library not installed (psycopg2-binary or pymysql)"
+        except Exception as e:
+            return False, f"✗ Database: Connection failed ({str(e)[:60]})"
     
-    if not all([driver, url, jars]):
-        return False, "✗ JDBC: Not configured (need DRIVER_CLASS, URL, JARS)"
+    # Fallback to JDBC-style env vars (for backward compatibility)
+    jdbc_url = os.getenv("MCPKIT_JDBC_URL")
+    if jdbc_url:
+        if jdbc_url.startswith("jdbc:postgresql://"):
+            try:
+                import psycopg2
+                pg_url = jdbc_url.replace("jdbc:postgresql://", "postgresql://")
+                user = os.getenv("MCPKIT_JDBC_USER") or os.getenv("MCPKIT_DB_USER")
+                password = os.getenv("MCPKIT_JDBC_PASSWORD") or os.getenv("MCPKIT_DB_PASSWORD")
+                if user and password:
+                    pg_url = pg_url.replace("postgresql://", f"postgresql://{user}:{password}@")
+                conn = psycopg2.connect(pg_url)
+                conn.close()
+                return True, f"✓ Database: PostgreSQL (via JDBC URL) @ {jdbc_url.split('@')[-1] if '@' in jdbc_url else jdbc_url}"
+            except Exception as e:
+                return False, f"✗ Database: Connection failed ({str(e)[:60]})"
     
-    # Check if JAR file exists
-    jar_paths = jars.split(":")
-    missing_jars = [j for j in jar_paths if not os.path.exists(j)]
-    if missing_jars:
-        return False, f"✗ JDBC: JAR files not found: {', '.join(missing_jars)}"
-    
-    return True, f"✓ JDBC: {driver} @ {url} (JARs: {len(jar_paths)} found)"
+    return False, "○ Database: Not configured (set MCPKIT_DB_URL or MCPKIT_JDBC_URL)"
 
 def test_aws() -> Tuple[bool, str]:
     """Test AWS configuration."""
@@ -147,22 +169,27 @@ def main():
     schema_status, schema_msg = test_schema_registry()
     print(f"  {schema_msg}")
     
-    # JDBC
-    print("\n🗄️ JDBC Configuration:")
+    # Database
+    print("\n🗄️ Database Configuration:")
     print("-" * 60)
-    jdbc_vars = [
-        ("MCPKIT_JDBC_DRIVER_CLASS", False),
+    db_vars = [
+        ("MCPKIT_DB_URL", False),
+        ("MCPKIT_DB_HOST", False),
+        ("MCPKIT_DB_PORT", False),
+        ("MCPKIT_DB_NAME", False),
+        ("MCPKIT_DB_USER", False),
+        ("MCPKIT_DB_PASSWORD", False),
+        # Legacy JDBC vars for backward compatibility
         ("MCPKIT_JDBC_URL", False),
-        ("MCPKIT_JDBC_JARS", False),
         ("MCPKIT_JDBC_USER", False),
         ("MCPKIT_JDBC_PASSWORD", False),
     ]
-    for name, required in jdbc_vars:
+    for name, required in db_vars:
         status, msg = check_env_var(name, required)
         print(f"  {msg}")
     
-    jdbc_status, jdbc_msg = test_jdbc()
-    print(f"  {jdbc_msg}")
+    db_status, db_msg = test_db()
+    print(f"  {db_msg}")
     
     # AWS
     print("\n☁️ AWS Configuration:")
@@ -193,7 +220,7 @@ def main():
     services = [
         ("Kafka", kafka_status),
         ("Schema Registry", schema_status),
-        ("JDBC", jdbc_status),
+        ("Database", db_status),
         ("AWS", aws_status),
         ("Docker Compose", docker_status),
     ]
@@ -210,16 +237,16 @@ def main():
     print("-" * 60)
     if not kafka_status or not schema_status:
         print("  To start Kafka & Schema Registry:")
-        print("    cd /Users/yannrolland/perso/mcpkit-data")
+        print(f"    cd {os.path.dirname(os.path.abspath(__file__))}")
         print("    docker compose up -d")
         print("    export MCPKIT_KAFKA_BOOTSTRAP=localhost:9092")
         print("    export MCPKIT_SCHEMA_REGISTRY_URL=http://localhost:8081")
     
-    if not jdbc_status:
-        print("  To configure JDBC:")
-        print("    export MCPKIT_JDBC_DRIVER_CLASS=org.postgresql.Driver")
-        print("    export MCPKIT_JDBC_URL=jdbc:postgresql://localhost/test")
-        print("    export MCPKIT_JDBC_JARS=/path/to/postgresql.jar")
+    if not db_status:
+        print("  To configure Database:")
+        print("    export MCPKIT_DB_URL=postgresql://user:pass@localhost:5432/dbname")
+        print("    # Or for MySQL:")
+        print("    export MCPKIT_DB_URL=mysql://user:pass@localhost:3306/dbname")
     
     if not aws_status:
         print("  To configure AWS:")

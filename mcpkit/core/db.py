@@ -6,7 +6,7 @@ Supports PostgreSQL and MySQL (no JVM required).
 import os
 from typing import Any, Optional
 
-from .guards import GuardError, cap_rows, get_max_rows, validate_jdbc_query
+from .guards import GuardError, cap_rows, get_max_rows, validate_db_query
 
 
 def get_db_config() -> dict:
@@ -68,14 +68,14 @@ def get_db_config() -> dict:
         return {"url": pg_url, "type": "postgresql"}
 
 
-def jdbc_query_ro(query: str, params: Optional[list[Any]] = None) -> dict:
+def db_query_ro(query: str, params: Optional[list[Any]] = None) -> dict:
     """
     Execute read-only database query using native Python libraries.
 
     Supports PostgreSQL (psycopg2) and MySQL (PyMySQL) - no JVM required.
     Returns dict with columns and rows.
     """
-    validate_jdbc_query(query)
+    validate_db_query(query)
     config = get_db_config()
     db_type = config["type"]
 
@@ -178,7 +178,7 @@ def jdbc_query_ro(query: str, params: Optional[list[Any]] = None) -> dict:
             conn.close()
 
 
-def jdbc_introspect(
+def db_introspect(
     schema_like: Optional[str] = None,
     table_like: Optional[str] = None,
     max_tables: int = 200
@@ -232,7 +232,7 @@ def jdbc_introspect(
             except ImportError:
                 raise GuardError("PyMySQL not installed. Install with: pip install pymysql")
 
-            # Parse MySQL URL (same logic as jdbc_query_ro)
+            # Parse MySQL URL (same logic as db_query_ro)
             url = config["url"]
             if url.startswith("mysql://"):
                 url = url.replace("mysql://", "")

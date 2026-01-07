@@ -41,8 +41,10 @@ def test_parse_list_param_with_null_string():
 
 def test_parse_list_param_with_invalid_json():
     """Test parsing invalid JSON."""
-    result = _parse_list_param("not json", None)
-    assert result is None
+    from mcpkit.core.guards import GuardError
+    # Invalid JSON should raise GuardError
+    with pytest.raises(GuardError):
+        _parse_list_param("not json", None)
 
 
 def test_parse_list_param_with_nested_lists():

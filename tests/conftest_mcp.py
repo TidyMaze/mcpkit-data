@@ -167,7 +167,7 @@ def kafka_setup(docker_services, monkeypatch):
 
 
 @pytest.fixture
-def jdbc_setup(docker_services, monkeypatch):
+def db_setup(docker_services, monkeypatch):
     """Setup PostgreSQL database environment for tests.
     
     Uses native psycopg2 (no JVM required).

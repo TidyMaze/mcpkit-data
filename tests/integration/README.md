@@ -17,7 +17,7 @@ Tests are organized by tool category:
 - `test_registry_mcp.py` - Dataset registry tools (4 tools)
 - `test_kafka_mcp.py` - Kafka tools (8 tools)
 - `test_schema_registry_mcp.py` - Schema Registry tools (4 tools)
-- `test_jdbc_mcp.py` - JDBC tools (2 tools)
+- `test_db_mcp.py` - Database tools (2 tools)
 - `test_aws_mcp.py` - AWS tools (9 tools)
 - `test_pandas_mcp.py` - Pandas tools (12 tools)
 - `test_polars_mcp.py` - Polars tools (3 tools)
@@ -119,16 +119,15 @@ AWS services are mocked using **moto** - no real AWS credentials needed:
 
 The `aws_mock` fixture automatically sets up mocks for each test.
 
-### JDBC Database
+### Database
 
-PostgreSQL is started in Docker. JDBC tests use:
-- **Driver**: `org.postgresql.Driver`
-- **URL**: `jdbc:postgresql://localhost:5432/testdb`
+PostgreSQL is started in Docker. Database tests use:
+- **URL**: `postgresql://testuser:testpass@localhost:5432/testdb`
 - **User**: `testuser`
 - **Password**: `testpass`
+- **Database**: `testdb`
 
-**Note**: JDBC tests require the PostgreSQL JDBC driver (`postgresql.jar`) to be available.
-If not available, tests will skip.
+**Note**: Database tests use native Python libraries (psycopg2) - no JVM required.
 
 ## Coverage
 
@@ -156,7 +155,7 @@ Target: **95% coverage** for `mcpkit/server.py` and `mcpkit/core/*.py`
 
 ### Optional
 
-- **JDBC Driver**: PostgreSQL JDBC driver for JDBC tests
+- **Database**: PostgreSQL database for database tests
 - **Nomad/Consul**: For infrastructure tests (tests skip if unavailable)
 
 ## Notes

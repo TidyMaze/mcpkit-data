@@ -125,9 +125,9 @@ def validate_sql_readonly(query: str) -> str:
     raise GuardError("Query must start with SELECT, WITH, EXPLAIN SELECT, or EXPLAIN WITH")
 
 
-def validate_jdbc_query(query: str) -> str:
+def validate_db_query(query: str) -> str:
     """
-    Validate JDBC query is read-only.
+    Validate database query is read-only.
     Raises GuardError if not read-only.
     Returns normalized query.
     """
