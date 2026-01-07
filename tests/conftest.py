@@ -3,7 +3,10 @@
 import atexit
 
 # Import fixtures from conftest_mcp.py
-from tests.conftest_mcp import *  # noqa: F403, F401
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+from conftest_mcp import *  # noqa: F403, F401
 
 
 def pytest_configure(config):

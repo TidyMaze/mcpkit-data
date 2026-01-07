@@ -413,3 +413,134 @@ class ChartResponse(BaseModel):
     warnings: list[str] = Field(description="Warnings encountered during chart generation")
     sample: list[dict] = Field(description="Sample rows from dataset (capped)")
 
+
+# ============================================================================
+# Nomad & Consul Models
+# ============================================================================
+
+class NomadJobInfo(BaseModel):
+    """Nomad job information."""
+    ID: str = Field(description="Job ID", alias="ID")
+    Name: str = Field(description="Job name", alias="Name")
+    Status: str = Field(description="Job status", alias="Status")
+    Type: str = Field(description="Job type", alias="Type")
+    Priority: int = Field(description="Job priority", alias="Priority")
+    Datacenters: list[str] = Field(description="Datacenters", alias="Datacenters")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class NomadListResponse(BaseModel):
+    """Response for listing Nomad jobs."""
+    jobs: list[NomadJobInfo] = Field(description="List of running jobs")
+    total_jobs: int = Field(description="Total number of jobs")
+    running_count: int = Field(description="Number of running jobs")
+
+
+class ConsulServiceIP(BaseModel):
+    """Consul service IP information."""
+    ip: str = Field(description="IP address")
+    port: Optional[int] = Field(description="Service port")
+    node: Optional[str] = Field(description="Node name")
+    service_id: Optional[str] = Field(description="Service ID")
+    service_name: Optional[str] = Field(description="Service name (when multiple services match)")
+    healthy: Optional[bool] = Field(description="Whether service is passing health checks")
+
+
+class ConsulServiceResponse(BaseModel):
+    """Response for Consul service IPs."""
+    service_name: str = Field(description="Service name")
+    ips: list[ConsulServiceIP] = Field(description="List of IP addresses")
+    count: int = Field(description="Number of IPs found")
+
+
+class ConsulListServicesResponse(BaseModel):
+    """Response for listing Consul services."""
+    services: list[str] = Field(description="List of service names")
+    count: int = Field(description="Number of services")
+
+
+class NomadNodeStatusResponse(BaseModel):
+    """Response for Nomad node status."""
+    node_id: str = Field(description="Node ID")
+    node: dict = Field(description="Full node information including status, resources, and health")
+    allocations: list[dict] = Field(description="List of allocations on the node")
+
+
+class ConsulServiceHealthCheck(BaseModel):
+    """Consul health check information."""
+    check_id: str = Field(description="Check ID")
+    name: str = Field(description="Check name")
+    status: str = Field(description="Check status (passing, warning, critical)")
+    output: Optional[str] = Field(description="Check output")
+    service_id: Optional[str] = Field(description="Service ID")
+    service_name: Optional[str] = Field(description="Service name")
+
+
+class ConsulServiceHealthInstance(BaseModel):
+    """Consul service health instance."""
+    node: Optional[str] = Field(description="Node name")
+    node_address: Optional[str] = Field(description="Node address")
+    service_id: Optional[str] = Field(description="Service ID")
+    service_name: Optional[str] = Field(description="Service name")
+    service_address: Optional[str] = Field(description="Service address")
+    service_port: Optional[int] = Field(description="Service port")
+    health_status: str = Field(description="Overall health status")
+    checks: list[dict] = Field(description="List of health checks")
+    check_summary: dict = Field(description="Summary of check counts")
+
+
+class ConsulServiceHealthResponse(BaseModel):
+    """Response for Consul service health."""
+    service_name: str = Field(description="Service name")
+    instances: list[ConsulServiceHealthInstance] = Field(description="List of service instances with health")
+    count: int = Field(description="Number of instances")
+
+
+# ============================================================================
+# Kafka Additional Models
+# ============================================================================
+
+class KafkaPartitionInfo(BaseModel):
+    """Kafka partition information."""
+    partition: int = Field(description="Partition number")
+    leader: Optional[int] = Field(description="Leader broker ID")
+    replicas: list[int] = Field(description="List of replica broker IDs")
+    isr: list[int] = Field(description="In-sync replica broker IDs")
+
+
+class KafkaDescribeTopicResponse(BaseModel):
+    """Response for Kafka topic description."""
+    topic: str = Field(description="Topic name")
+    partitions: list[KafkaPartitionInfo] = Field(description="List of partition information")
+    partition_count: int = Field(description="Number of partitions")
+    replication_factor: int = Field(description="Replication factor")
+    config: dict[str, str] = Field(description="Topic configuration")
+
+
+# ============================================================================
+# HTTP Models
+# ============================================================================
+
+class HttpRequestResponse(BaseModel):
+    """Response for HTTP request."""
+    url: str = Field(description="Final URL (after redirects)")
+    status_code: int = Field(description="HTTP status code")
+    headers: dict[str, str] = Field(description="Response headers")
+    body: dict | list | str = Field(description="Response body (JSON dict/list or text)")
+    content_type: str = Field(description="Content type: 'json' or 'text'")
+    size: int = Field(description="Response size in bytes")
+
+
+# ============================================================================
+# Dataset Operations Models
+# ============================================================================
+
+class DatasetHeadTailResponse(BaseModel):
+    """Response for dataset head/tail."""
+    dataset_id: str = Field(description="Dataset ID")
+    total_rows: int = Field(description="Total number of rows")
+    head_rows: Optional[list[dict]] = Field(description="First N rows")
+    tail_rows: Optional[list[dict]] = Field(description="Last M rows")
+    head_count: int = Field(description="Number of head rows returned")
+    tail_count: int = Field(description="Number of tail rows returned")
+
