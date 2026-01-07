@@ -71,12 +71,11 @@ def event_validate(record: dict, schema: dict) -> dict:
     """
     try:
         jsonschema.validate(instance=record, schema=schema)
-        return {"valid": True}
+        return {"valid": True, "errors": None}
     except jsonschema.ValidationError as e:
         return {
             "valid": False,
-            "error": str(e),
-            "path": list(e.path) if e.path else [],
+            "errors": [str(e)],
         }
     except jsonschema.SchemaError as e:
         raise GuardError(f"Invalid schema: {e}")
@@ -198,7 +197,7 @@ def event_correlate(
             })
     
     return {
-        "correlated_count": len(correlated),
+        "correlation_count": len(correlated),
         "correlated": correlated,
     }
 

@@ -207,5 +207,6 @@ def save_dataset(df: pd.DataFrame, dataset_id: Optional[str] = None) -> dict:
         "dataset_id": dataset_id,
         "rows": len(df),
         "columns": list(df.columns),
+        "path": str(path),
     }
 

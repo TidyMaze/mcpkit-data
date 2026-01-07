@@ -214,7 +214,7 @@ class TransformResponse(BaseModel):
 class ValidateResponse(BaseModel):
     """Response for validation."""
     valid: bool = Field(description="Whether validation passed")
-    errors: Optional[list[str]] = Field(description="Validation errors (if invalid)")
+    errors: Optional[list[str]] = Field(default=None, description="Validation errors (if invalid)")
 
 
 class FingerprintResponse(BaseModel):
@@ -1327,7 +1327,7 @@ def polars_export(
 @mcp.tool()
 def duckdb_query_local(
     sql: Annotated[str, Field(description="SQL query string (SELECT/WITH only, read-only queries)")],
-    sources: Annotated[Optional[str], BeforeValidator(_sources_validator), Field(description="Source definitions as JSON string. Format: '[{\"name\": \"view_name\", \"dataset_id\": \"dataset_id\"}]' for registry datasets OR '[{\"name\": \"view_name\", \"path\": \"/path/to/file\", \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"}]' for files. Example: '[{\"name\": \"events\", \"dataset_id\": \"kafka_events\"}]'. WORKAROUND: If you have a dict/list, convert to JSON first: json.dumps([{\"name\": \"view\", \"dataset_id\": \"id\"}])")] = None,
+    sources: Annotated[Optional[Union[str, list]], BeforeValidator(_sources_validator), Field(description="Source definitions as JSON string. Format: '[{\"name\": \"view_name\", \"dataset_id\": \"dataset_id\"}]' for registry datasets OR '[{\"name\": \"view_name\", \"path\": \"/path/to/file\", \"format\": \"parquet\"|\"csv\"|\"json\"|\"jsonl\"}]' for files. Example: '[{\"name\": \"events\", \"dataset_id\": \"kafka_events\"}]'. WORKAROUND: If you have a dict/list, convert to JSON first: json.dumps([{\"name\": \"view\", \"dataset_id\": \"id\"}])")] = None,
     # Alternative: single source parameters (workaround for MCP serialization)
     source_name: Annotated[Optional[str], Field(description="Alternative: single source view name (use with source_dataset_id or source_path+source_format)")] = None,
     source_dataset_id: Annotated[Optional[str], Field(description="Alternative: single source dataset_id (use with source_name)")] = None,
@@ -1452,10 +1452,16 @@ def duckdb_query_local(
     # If sources is a string (JSON), validate and convert to list
     # The validator should have done this, but if we constructed it from individual params,
     # we need to validate it ourselves
-    if sources is not None and isinstance(sources, str):
-        sources_list = _sources_validator(sources)
+    # Note: After BeforeValidator, sources should already be a list, but FastMCP might pass it as string
+    if sources is not None:
+        if isinstance(sources, str):
+            sources_list = _sources_validator(sources)
+        elif isinstance(sources, list):
+            sources_list = sources
+        else:
+            raise GuardError(f"sources must be a JSON string or list, got {type(sources)}")
     else:
-        sources_list = sources
+        sources_list = None
     if sources_list is not None:
         logger.debug(f"duckdb_query_local: sources_list after validator: {sources_list}")
         if not isinstance(sources_list, list):

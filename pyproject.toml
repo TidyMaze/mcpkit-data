@@ -21,16 +21,23 @@ dependencies = [
     "polars",
     "pyarrow",
     "duckdb",
-    "JayDeBeApi",
-    "JPype1",
     "matplotlib",
+    "psycopg2-binary",
+    "pymysql",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "pytest-mock",
+    "pytest-cov",
     "responses",
+    "mcp>=1.0.0",
+    "moto>=5.0.0",
+    "docker>=7.0.0",
+    "psycopg2-binary>=2.9.0",
+    "kafka-python>=2.0.0",
+    "requests>=2.31.0",
 ]
 integration = [
     "confluent-kafka",
@@ -50,4 +57,5 @@ python_functions = "test_*"
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
 ]
+addopts = "--cov=mcpkit --cov-report=term-missing --cov-report=html"
 
