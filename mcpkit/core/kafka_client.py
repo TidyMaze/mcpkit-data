@@ -54,8 +54,14 @@ def _decode_kafka_value(value_bytes: bytes, schema_registry_url: Optional[str] =
             value_base64 = base64.b64encode(value_bytes).decode("utf-8")
             decoded_result = avro_decode(value_base64, schema_registry_url=registry_url)
             decoded_data = decoded_result.get("decoded", {})
-            # Convert to JSON string
-            return json.dumps(decoded_data)
+            # Convert to JSON string with datetime handling
+            from datetime import datetime, date, time
+            class DateTimeEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, (datetime, date, time)):
+                        return obj.isoformat()
+                    return super().default(obj)
+            return json.dumps(decoded_data, cls=DateTimeEncoder)
         else:
             # Avro detected but no Schema Registry URL provided - cannot decode
             raise GuardError("Avro message detected but MCPKIT_SCHEMA_REGISTRY_URL not set. Provide schema_registry_url parameter or set environment variable.")

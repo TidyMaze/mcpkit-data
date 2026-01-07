@@ -54,11 +54,21 @@ def avro_decode(value_base64: str, schema_json: Optional[dict] = None, schema_re
 
 
 def _convert_avro_types(obj):
-    """Convert Avro-specific types (UUID, etc.) to JSON-serializable types."""
+    """Convert Avro-specific types (UUID, datetime, etc.) to JSON-serializable types."""
     import uuid
+    from datetime import datetime, date, time
     
     if isinstance(obj, uuid.UUID):
         return str(obj)
+    elif isinstance(obj, datetime):
+        # Convert datetime to ISO format string
+        return obj.isoformat()
+    elif isinstance(obj, date):
+        # Convert date to ISO format string
+        return obj.isoformat()
+    elif isinstance(obj, time):
+        # Convert time to ISO format string
+        return obj.isoformat()
     elif isinstance(obj, dict):
         return {k: _convert_avro_types(v) for k, v in obj.items()}
     elif isinstance(obj, list):
