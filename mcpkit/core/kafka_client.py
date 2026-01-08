@@ -9,6 +9,14 @@ from kafka import KafkaConsumer, KafkaAdminClient
 from kafka.structs import TopicPartition
 from kafka.errors import KafkaError
 
+# Import compression-related errors for better error handling
+try:
+    from kafka.errors import UnsupportedCodecError, UnsupportedCompressionTypeError
+except ImportError:
+    # Fallback for older kafka-python versions
+    UnsupportedCodecError = None
+    UnsupportedCompressionTypeError = None
+
 from .guards import GuardError, cap_records, get_max_records, get_timeout_secs
 from .decode import avro_decode
 
@@ -177,6 +185,16 @@ def kafka_offsets(topic: str, group_id: Optional[str] = None, bootstrap_servers:
         
         return {"topic": topic, "partitions": offsets}
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error: {e}")
     finally:
         if consumer:
@@ -404,6 +422,16 @@ def kafka_consume_batch(
                 "columns": columns,
             }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error: {e}")
     finally:
         if consumer:
@@ -570,6 +598,16 @@ def kafka_consume_tail(
                 "columns": columns,
             }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error: {e}")
     finally:
         if consumer:
@@ -621,6 +659,16 @@ def kafka_list_topics(bootstrap_servers: Optional[str] = None) -> dict:
             "topic_count": len(topics)
         }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error listing topics: {e}")
     except Exception as e:
         raise GuardError(f"Error listing topics: {e}")
@@ -710,6 +758,16 @@ def kafka_describe_topic(topic: str, bootstrap_servers: Optional[str] = None) ->
             "config": topic_config,
         }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error describing topic: {e}")
     except Exception as e:
         raise GuardError(f"Error describing topic: {e}")

@@ -43,6 +43,9 @@ dev = [
 integration = [
     "confluent-kafka",
 ]
+kafka-snappy = [
+    "python-snappy",
+]
 ge = [
     "great-expectations",
 ]

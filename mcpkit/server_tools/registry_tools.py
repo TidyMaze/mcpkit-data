@@ -12,6 +12,7 @@ from mcpkit.server_models import (
     DatasetInfo,
     DatasetInfoResponse,
     DatasetListResponse,
+    DatasetPurgeResponse,
 )
 
 
@@ -47,3 +48,18 @@ def register_registry_tools(mcp: FastMCP):
         result = registry.dataset_delete(dataset_id)
         return DatasetDeleteResponse(**result)
 
+    @mcp.tool()
+    def dataset_purge(
+        older_than_days: Annotated[int | None, Field(description="Delete datasets older than N days", default=None)] = None,
+        pattern: Annotated[str | None, Field(description="Delete datasets matching pattern (substring in dataset_id)", default=None)] = None,
+        max_delete: Annotated[int | None, Field(description="Maximum number of datasets to delete (safety limit)", default=None)] = None,
+        purge_artifacts: Annotated[bool | None, Field(description="Also purge artifacts. If None, auto-purges when no filters (purging all)", default=None)] = None,
+    ) -> DatasetPurgeResponse:
+        """Purge datasets matching criteria (age or pattern). Also purges artifacts by default when purging all datasets."""
+        result = registry.dataset_purge(
+            older_than_days=older_than_days,
+            pattern=pattern,
+            max_delete=max_delete,
+            purge_artifacts=purge_artifacts,
+        )
+        return DatasetPurgeResponse(**result)

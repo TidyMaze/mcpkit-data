@@ -45,6 +45,14 @@ class DatasetDeleteResponse(BaseModel):
     deleted: bool = Field(description="Whether deletion was successful")
 
 
+class DatasetPurgeResponse(BaseModel):
+    """Response for dataset purge operation."""
+    deleted_count: int = Field(description="Number of datasets deleted")
+    deleted_dataset_ids: list[str] = Field(description="List of deleted dataset IDs")
+    artifact_deleted_count: int = Field(default=0, description="Number of artifacts deleted")
+    errors: list[str] | None = Field(default=None, description="List of errors if any")
+
+
 # ============================================================================
 # Kafka Models
 # ============================================================================
