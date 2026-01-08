@@ -91,7 +91,7 @@ class KafkaFilterResponse(BaseModel):
 
 class KafkaGroupResponse(BaseModel):
     """Response for grouping Kafka records."""
-    groups: dict[str, dict] = Field(description="Groups of records by key")
+    groups: dict[str, list] = Field(description="Groups of records by key")
     group_count: int = Field(description="Number of groups")
 
 

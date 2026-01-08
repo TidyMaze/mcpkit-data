@@ -9,7 +9,7 @@ import pytest
 
 from tests.utils_mcp import assert_response_structure, call_tool
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(30)]
 
 
 @pytest.fixture

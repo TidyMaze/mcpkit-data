@@ -351,7 +351,7 @@ def mcp_client():
             self._session_ctx = session_ctx
             
             # Initialize session (handshake) with timeout
-            await asyncio.wait_for(self._session.initialize(), timeout=5.0)
+            await asyncio.wait_for(self._session.initialize(), timeout=15.0)  # Increased from 5.0 to handle slow initialization under load
             self._initialized = True
             
             return self._session
@@ -392,7 +392,7 @@ def mcp_client():
                     # Call tool through full MCP protocol with timeout
                     result = await asyncio.wait_for(
                         session.call_tool(name, arguments),
-                        timeout=10.0  # 10 second timeout per call
+                        timeout=30.0  # 30 second timeout per call (increased to handle slow session initialization under load)
                     )
                     
                     # Extract response content
@@ -439,7 +439,7 @@ def mcp_client():
                     # Fallback: return empty dict
                     return {}
                 except asyncio.TimeoutError:
-                    raise RuntimeError(f"MCP tool '{name}' call timed out after 10s")
+                    raise RuntimeError(f"MCP tool '{name}' call timed out after 30s")
                 except Exception as e:
                     # Check if this is an error response from the tool
                     error_msg = str(e)

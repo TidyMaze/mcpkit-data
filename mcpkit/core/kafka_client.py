@@ -696,6 +696,8 @@ def kafka_describe_topic(topic: str, bootstrap_servers: Optional[str] = None) ->
     
     try:
         # Use consumer to get partition metadata
+        # For existing topics, we'll subscribe and check partitions
+        # For nonexistent topics, we check first to avoid auto-creation (if AdminClient available)
         consumer_config = config.copy()
         consumer_config["consumer_timeout_ms"] = 10000
         consumer_config["enable_auto_commit"] = False
@@ -703,19 +705,63 @@ def kafka_describe_topic(topic: str, bootstrap_servers: Optional[str] = None) ->
         
         consumer = KafkaConsumer(**consumer_config)
         
-        # Subscribe to the topic to trigger metadata fetch
+        # Quick check: try to get metadata without subscribing first
+        consumer.poll(timeout_ms=500)
+        cluster = consumer._client.cluster
+        existing_topics = cluster.topics()
+        
+        # If topic not in metadata, try AdminClient to confirm it doesn't exist (avoid auto-creation)
+        # Use short timeout to avoid blocking
+        if topic not in existing_topics:
+            try:
+                from kafka import KafkaAdminClient
+                bootstrap = bootstrap_servers or os.getenv("MCPKIT_KAFKA_BOOTSTRAP")
+                if bootstrap:
+                    admin_config = {"bootstrap_servers": bootstrap.split(",") if isinstance(bootstrap, str) else bootstrap}
+                    admin_client_check = KafkaAdminClient(**admin_config)
+                    try:
+                        from kafka.admin import ConfigResource, ConfigResourceType
+                        config_resource = ConfigResource(ConfigResourceType.TOPIC, topic)
+                        # Short timeout - if it fails quickly, topic doesn't exist
+                        configs = admin_client_check.describe_configs([config_resource], request_timeout_ms=1000)
+                        if config_resource not in configs:
+                            # Topic doesn't exist
+                            consumer.close()
+                            admin_client_check.close()
+                            raise GuardError(f"Topic {topic} not found")
+                    except Exception as e:
+                        error_str = str(e).lower()
+                        # Only raise if it's clearly a "not found" error
+                        if any(phrase in error_str for phrase in ["not found", "does not exist", "unknown topic", "invalid topic", "topic or partition"]):
+                            consumer.close()
+                            try:
+                                admin_client_check.close()
+                            except Exception:
+                                pass
+                            raise GuardError(f"Topic {topic} not found")
+                        # Other errors (timeout, network) - proceed to subscribe
+                    finally:
+                        try:
+                            admin_client_check.close()
+                        except Exception:
+                            pass
+            except (ImportError, Exception):
+                # AdminClient not available - will proceed to subscribe (may auto-create)
+                pass
+        
+        # Subscribe to the topic to get partition metadata
         consumer.subscribe([topic])
         consumer.poll(timeout_ms=5000)
-        
         import time
         time.sleep(1)
         
-        # Get cluster metadata
+        # Get cluster metadata after subscription
         cluster = consumer._client.cluster
         
         # Get partitions for the topic
         partitions = cluster.partitions_for_topic(topic)
         if not partitions:
+            consumer.close()
             raise GuardError(f"Topic {topic} not found")
         
         # Get basic partition info - just partition numbers

@@ -61,7 +61,7 @@ python_functions = "test_*"
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
 ]
-addopts = "--cov=mcpkit --cov-report=term-missing --cov-report=html"
+addopts = "--cov=mcpkit --cov-report=term-missing --cov-report=html -v --tb=short -s"
 timeout = 10
 
 [tool.mypy]

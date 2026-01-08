@@ -118,6 +118,7 @@ services:
     image: hashicorp/nomad:1.7
     hostname: nomad
     container_name: nomad-test
+    privileged: true
     ports:
       - "4646:4646"
       - "4647:4647"
@@ -126,6 +127,8 @@ services:
     depends_on:
       consul:
         condition: service_started
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
     healthcheck:
       test: ["CMD", "nomad", "node", "status"]
       interval: 10s
