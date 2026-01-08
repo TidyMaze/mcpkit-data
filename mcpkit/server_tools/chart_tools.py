@@ -30,6 +30,9 @@ def register_chart_tools(mcp: FastMCP):
         Exactly one of dataset_id or path must be provided.
         Supports csv, parquet, jsonl, and avro container files.
         Auto-detects column types and picks appropriate chart type.
+        
+        IMPORTANT: After generating the chart, always display the full file path from artifact_path 
+        in your response so the user can access the generated chart file.
         """
         max_rows = _to_int(max_rows, None)
         result = chart_ops.dataset_to_chart(

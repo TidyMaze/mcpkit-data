@@ -422,7 +422,7 @@ class GEValidationResponse(BaseModel):
 
 class ChartResponse(BaseModel):
     """Response for chart generation."""
-    artifact_path: str = Field(description="Path to generated chart artifact")
+    artifact_path: str = Field(description="Full file path to generated chart artifact - ALWAYS display this path in agent chat after chart generation")
     chart_spec: dict = Field(description="Final resolved chart specification used")
     detected: dict = Field(description="Detected schema/stats for columns")
     warnings: list[str] = Field(description="Warnings encountered during chart generation")
