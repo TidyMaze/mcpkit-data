@@ -456,15 +456,34 @@ def pandas_filter_time_range(
         raise GuardError(f"Timestamp column {timestamp_column} not found")
 
     # Convert timestamp column to datetime
+    # Use format='mixed' to handle various ISO8601 formats (with/without microseconds, timezone, etc.)
     try:
-        df[timestamp_column] = pd.to_datetime(df[timestamp_column])
+        df[timestamp_column] = pd.to_datetime(df[timestamp_column], format='mixed', errors='coerce')
+        # Check if any values failed to parse
+        null_count = df[timestamp_column].isna().sum()
+        if null_count > 0:
+            logger.warning(f"Failed to parse {null_count} timestamp values (set to NaT)")
     except Exception as e:
-        raise GuardError(f"Failed to parse timestamp column: {e}")
+        # Fallback to default parsing if format='mixed' fails (older pandas versions)
+        try:
+            df[timestamp_column] = pd.to_datetime(df[timestamp_column], errors='coerce')
+        except Exception as e2:
+            raise GuardError(f"Failed to parse timestamp column: {e}. You might want to try:\n"
+                           f"- passing `format` if your strings have a consistent format;\n"
+                           f"- passing `format='ISO8601'` if your strings are all ISO8601 but not necessarily in exactly the same format;\n"
+                           f"- passing `format='mixed'`, and the format will be inferred for each element individually.")
 
     # Apply filters
     if start_time:
         try:
             start_dt = pd.to_datetime(start_time)
+            # Handle timezone-aware vs timezone-naive comparison
+            if df[timestamp_column].dt.tz is not None and start_dt.tz is None:
+                # Column is timezone-aware, make start_dt timezone-aware (UTC)
+                start_dt = start_dt.tz_localize('UTC')
+            elif df[timestamp_column].dt.tz is None and start_dt.tz is not None:
+                # Column is timezone-naive, make start_dt timezone-naive
+                start_dt = start_dt.tz_localize(None)
             df = df[df[timestamp_column] >= start_dt]
         except Exception as e:
             raise GuardError(f"Failed to parse start_time: {e}")
@@ -472,6 +491,13 @@ def pandas_filter_time_range(
     if end_time:
         try:
             end_dt = pd.to_datetime(end_time)
+            # Handle timezone-aware vs timezone-naive comparison
+            if df[timestamp_column].dt.tz is not None and end_dt.tz is None:
+                # Column is timezone-aware, make end_dt timezone-aware (UTC)
+                end_dt = end_dt.tz_localize('UTC')
+            elif df[timestamp_column].dt.tz is None and end_dt.tz is not None:
+                # Column is timezone-naive, make end_dt timezone-naive
+                end_dt = end_dt.tz_localize(None)
             df = df[df[timestamp_column] <= end_dt]
         except Exception as e:
             raise GuardError(f"Failed to parse end_time: {e}")

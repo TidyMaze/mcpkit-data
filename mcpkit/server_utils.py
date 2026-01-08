@@ -70,6 +70,42 @@ def _parse_dict_param(value, default=None):
     return default
 
 
+def _dict_validator(value):
+    """Pydantic validator to convert string (JSON object) to dict.
+    
+    Handles FastMCP serialization issues where dicts might come as strings.
+    """
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        if value.lower() == "null" or value == "":
+            return None
+        # Check for FastMCP serialization failure
+        if "[object Object]" in value or value.strip() == "[object Object]":
+            logger.warning(
+                "=== SERIALIZATION ISSUE DETECTED ==="
+                f"\n  Parameter: hints (or other dict parameter)"
+                f"\n  Received: '{value}' (string literal)"
+                f"\n  Issue: FastMCP serialized dict to '[object Object]' and lost data"
+                f"\n  Cause: Complex types (dict) cannot be passed directly via MCP"
+                f"\n  Workaround: Pass as JSON string: '{{\"key\": \"value\"}}'"
+            )
+            raise ValueError(
+                "FastMCP cannot serialize dict parameters directly. WORKAROUND:\n"
+                "Pass as JSON string: '{\"key\": \"value\"}'"
+            )
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    # Return as-is if we can't parse (let Pydantic handle validation)
+    return value
+
+
 def _list_validator(value):
     """Pydantic validator to convert string (JSON array) to list."""
     if value is None:
