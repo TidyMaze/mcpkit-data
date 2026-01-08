@@ -3,7 +3,7 @@
 import io
 import os
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import pandas as pd
 
@@ -128,7 +128,7 @@ def _auto_pick_chart(detected: dict, df: pd.DataFrame, goal: Optional[str] = Non
     numeric_cols = [col for col, info in detected.items() if info["type"] == "numeric"]
     categorical_cols = [col for col, info in detected.items() if info["type"] == "categorical"]
     
-    spec = {}
+    spec: dict[str, Any] = {}
     
     # Rule 1: datetime + numeric => line (time series)
     if datetime_cols and numeric_cols:
@@ -342,7 +342,13 @@ def dataset_to_chart(
     if dataset_id:
         df = load_dataset(dataset_id)
     else:
+        if path is None:
+            raise GuardError("path must be provided when dataset_id is None")
         df = _load_dataset_from_path(path, input_format)
+    
+    # Check for empty dataset
+    if len(df) == 0:
+        raise GuardError("Cannot generate chart from empty dataset")
     
     # Cap rows
     if len(df) > max_rows:

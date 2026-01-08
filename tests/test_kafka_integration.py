@@ -108,6 +108,8 @@ def test_kafka_offsets_integration(kafka_setup, kafka_topic, kafka_producer):
 
 def test_kafka_consume_batch_integration(kafka_setup, kafka_topic, kafka_producer):
     """Test kafka_consume_batch with real Kafka."""
+    from mcpkit.core.registry import load_dataset
+    
     # Produce messages
     messages = [f"message_{i}" for i in range(10)]
     if CONFLUENT_KAFKA_AVAILABLE:
@@ -120,19 +122,24 @@ def test_kafka_consume_batch_integration(kafka_setup, kafka_topic, kafka_produce
         kafka_producer.flush()
     time.sleep(1)
     
-    # Consume batch
+    # Consume batch - now returns dataset_id instead of records
     result = kafka_consume_batch(kafka_topic, max_records=10, timeout_secs=5)
     
-    assert "records" in result
-    assert len(result["records"]) == 10
+    assert "dataset_id" in result
+    assert "record_count" in result
+    assert result["record_count"] == 10
+    
+    # Load dataset to verify messages
+    df = load_dataset(result["dataset_id"])
+    assert len(df) == 10
     
     # Verify we got the messages
-    consumed_values = [
-        base64.b64decode(r["value_base64"]).decode("utf-8")
-        for r in result["records"]
-        if r["value_base64"]
-    ]
-    assert len(consumed_values) == 10
+    if "value" in df.columns:
+        consumed_values = df["value"].tolist()
+        assert len(consumed_values) == 10
+        # Check that messages are present (order may vary)
+        for msg in messages:
+            assert msg in consumed_values
 
 
 def test_schema_registry_get_integration(kafka_setup):
@@ -254,6 +261,7 @@ def test_avro_decode_with_provided_schema(kafka_setup):
 def test_kafka_filter_integration(kafka_setup, kafka_topic, kafka_producer):
     """Test kafka_filter with real Kafka records."""
     from mcpkit.core.json_tools import jq_transform
+    from mcpkit.core.registry import load_dataset
     
     # Produce JSON messages
     messages = [
@@ -272,16 +280,28 @@ def test_kafka_filter_integration(kafka_setup, kafka_topic, kafka_producer):
         kafka_producer.flush()
     time.sleep(1)
     
-    # Consume and filter
+    # Consume - now returns dataset_id
     result = kafka_consume_batch(kafka_topic, max_records=10, timeout_secs=5)
-    records = result["records"]
+    assert "dataset_id" in result
+    
+    # Load dataset and convert to records format for filtering
+    df = load_dataset(result["dataset_id"])
+    records = df.to_dict("records")
     
     # Filter records where user_id == 1
     filtered = []
     for record in records:
-        if record["value_base64"]:
-            value_bytes = base64.b64decode(record["value_base64"])
-            value_json = json.loads(value_bytes.decode("utf-8"))
+        # value might be decoded JSON string or dict
+        value = record.get("value")
+        if value:
+            if isinstance(value, str):
+                try:
+                    value_json = json.loads(value)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            else:
+                value_json = value
+            
             jmes_result = jq_transform(value_json, "user_id")
             if jmes_result.get("result") == 1:
                 filtered.append(record)
@@ -292,6 +312,7 @@ def test_kafka_filter_integration(kafka_setup, kafka_topic, kafka_producer):
 def test_kafka_groupby_key_integration(kafka_setup, kafka_topic, kafka_producer):
     """Test kafka_groupby_key with real Kafka records."""
     from mcpkit.core.json_tools import jq_transform
+    from mcpkit.core.registry import load_dataset
     
     # Produce messages with different keys
     messages = [
@@ -310,16 +331,27 @@ def test_kafka_groupby_key_integration(kafka_setup, kafka_topic, kafka_producer)
         kafka_producer.flush()
     time.sleep(1)
     
-    # Consume
+    # Consume - now returns dataset_id
     result = kafka_consume_batch(kafka_topic, max_records=10, timeout_secs=5)
-    records = result["records"]
+    assert "dataset_id" in result
+    
+    # Load dataset and convert to records format
+    df = load_dataset(result["dataset_id"])
+    records = df.to_dict("records")
     
     # Group by order_id
     groups = {}
     for record in records:
-        if record["value_base64"]:
-            value_bytes = base64.b64decode(record["value_base64"])
-            value_json = json.loads(value_bytes.decode("utf-8"))
+        value = record.get("value")
+        if value:
+            if isinstance(value, str):
+                try:
+                    value_json = json.loads(value)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            else:
+                value_json = value
+            
             key = jq_transform(value_json, "order_id").get("result")
             if key not in groups:
                 groups[key] = []

@@ -22,8 +22,8 @@
 - `protobuf_decode` - Decode Protobuf messages
 
 ### JDBC (2)
-- `jdbc_query_ro` - Read-only SQL queries
-- `jdbc_introspect` - Schema introspection
+- `db_query_ro` - Read-only SQL queries
+- `db_introspect` - Schema introspection
 
 ### AWS (8)
 - `athena_start_query` - Start query

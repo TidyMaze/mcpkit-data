@@ -110,7 +110,8 @@ def test_event_validate_invalid():
     }
     result = event_validate(record, schema)
     assert result["valid"] is False
-    assert "error" in result
+    assert "errors" in result
+    assert result["errors"] is not None
 
 
 def test_event_validate_invalid_schema():
@@ -168,7 +169,7 @@ def test_event_correlate():
         [{"user_id": 2, "timestamp": 150, "event": "login"}],
     ]
     result = event_correlate(batches, "user_id", "timestamp")
-    assert result["correlated_count"] >= 1
+    assert result["correlation_count"] >= 1
     # User 1 should have 2 events
     user1_events = [c for c in result["correlated"] if c["join_key"] == 1]
     assert len(user1_events) > 0

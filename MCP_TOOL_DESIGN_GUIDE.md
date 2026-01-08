@@ -17,7 +17,7 @@ Tools should work together seamlessly:
 ### 3. **Clear Naming**
 - Use verb_noun pattern: `pandas_filter_query`, `kafka_consume_batch`
 - Be specific: `pandas_filter_time_range` not `pandas_filter`
-- Group related tools with prefixes: `pandas_*`, `kafka_*`, `jdbc_*`
+- Group related tools with prefixes: `pandas_*`, `kafka_*`, `db_*`
 
 ## Documentation Standards
 

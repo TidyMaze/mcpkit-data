@@ -9,6 +9,14 @@ from kafka import KafkaConsumer, KafkaAdminClient
 from kafka.structs import TopicPartition
 from kafka.errors import KafkaError
 
+# Import compression-related errors for better error handling
+try:
+    from kafka.errors import UnsupportedCodecError, UnsupportedCompressionTypeError
+except ImportError:
+    # Fallback for older kafka-python versions
+    UnsupportedCodecError = None
+    UnsupportedCompressionTypeError = None
+
 from .guards import GuardError, cap_records, get_max_records, get_timeout_secs
 from .decode import avro_decode
 
@@ -54,8 +62,14 @@ def _decode_kafka_value(value_bytes: bytes, schema_registry_url: Optional[str] =
             value_base64 = base64.b64encode(value_bytes).decode("utf-8")
             decoded_result = avro_decode(value_base64, schema_registry_url=registry_url)
             decoded_data = decoded_result.get("decoded", {})
-            # Convert to JSON string
-            return json.dumps(decoded_data)
+            # Convert to JSON string with datetime handling
+            from datetime import datetime, date, time
+            class DateTimeEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, (datetime, date, time)):
+                        return obj.isoformat()
+                    return super().default(obj)
+            return json.dumps(decoded_data, cls=DateTimeEncoder)
         else:
             # Avro detected but no Schema Registry URL provided - cannot decode
             raise GuardError("Avro message detected but MCPKIT_SCHEMA_REGISTRY_URL not set. Provide schema_registry_url parameter or set environment variable.")
@@ -171,6 +185,16 @@ def kafka_offsets(topic: str, group_id: Optional[str] = None, bootstrap_servers:
         
         return {"topic": topic, "partitions": offsets}
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error: {e}")
     finally:
         if consumer:
@@ -259,7 +283,7 @@ def kafka_consume_batch(
             if partitions:
                 consumer.seek_to_beginning(*partitions)
         
-        records = []
+        records: list[dict[str, Any]] = []
         limit = max_records if max_records else get_max_records()
         
         # Use poll with timeout instead of iterator to avoid hanging
@@ -398,6 +422,16 @@ def kafka_consume_batch(
                 "columns": columns,
             }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error: {e}")
     finally:
         if consumer:
@@ -564,6 +598,16 @@ def kafka_consume_tail(
                 "columns": columns,
             }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error: {e}")
     finally:
         if consumer:
@@ -615,6 +659,16 @@ def kafka_list_topics(bootstrap_servers: Optional[str] = None) -> dict:
             "topic_count": len(topics)
         }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error listing topics: {e}")
     except Exception as e:
         raise GuardError(f"Error listing topics: {e}")
@@ -704,6 +758,16 @@ def kafka_describe_topic(topic: str, bootstrap_servers: Optional[str] = None) ->
             "config": topic_config,
         }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error describing topic: {e}")
     except Exception as e:
         raise GuardError(f"Error describing topic: {e}")
@@ -729,7 +793,7 @@ def _flatten_dict(d: dict, parent_key: str = "", sep: str = "_") -> dict:
     Returns:
         Flattened dictionary
     """
-    items = []
+    items: list[tuple[str, Any]] = []
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
         if isinstance(v, dict):
@@ -764,8 +828,8 @@ def kafka_flatten_records(records: list[dict]) -> dict:
         }
     
     # Process all records to collect all possible columns
-    flattened_records = []
-    all_columns = set()
+    flattened_records: list[dict[str, Any]] = []
+    all_columns: set[str] = set()
     
     for record in records:
         flat = {
@@ -900,16 +964,18 @@ def kafka_flatten_dataset(dataset_id: str, out_dataset_id: Optional[str] = None)
         result = kafka_flatten_records(records)
     
     # Save as new dataset
-    if result["rows"]:
-        df_out = pd.DataFrame(result["rows"], columns=result["columns"])
+    rows: list[list[Any]] = result["rows"]  # type: ignore[assignment]
+    columns: list[str] = result["columns"]  # type: ignore[assignment]
+    if rows:
+        df_out = pd.DataFrame(rows, columns=columns)
     else:
-        df_out = pd.DataFrame(columns=result["columns"])
+        df_out = pd.DataFrame(columns=columns)
     
     save_result = save_dataset(df_out, out_dataset_id)
     
     return {
         "dataset_id": save_result["dataset_id"],
         "columns": result["columns"],
-        "rows": len(result["rows"]),
+        "rows": len(result["rows"]),  # type: ignore[arg-type]
         "record_count": result["record_count"],
     }

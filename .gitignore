@@ -19,3 +19,6 @@ htmlcov/
 .env
 .env.local
 .env.*.local
+.localstack/
+coverage.json
+.coverage.*

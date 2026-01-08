@@ -49,7 +49,12 @@ def jq_transform(data: Any, expression: str) -> dict:
             data = json.loads(data)
         except json.JSONDecodeError:
             # If it's not JSON, use as-is (might be a plain string value)
-            pass
+            # For plain strings with "." expression, just return the string
+            if expression == ".":
+                return {"result": data}
+            # Otherwise, wrap in a dict so JMESPath can work with it
+            data = {"value": data}
+            expression = "value" if expression == "." else expression
     
     try:
         result = jmespath.search(expression, data)
@@ -71,12 +76,11 @@ def event_validate(record: dict, schema: dict) -> dict:
     """
     try:
         jsonschema.validate(instance=record, schema=schema)
-        return {"valid": True}
+        return {"valid": True, "errors": None}
     except jsonschema.ValidationError as e:
         return {
             "valid": False,
-            "error": str(e),
-            "path": list(e.path) if e.path else [],
+            "errors": [str(e)],
         }
     except jsonschema.SchemaError as e:
         raise GuardError(f"Invalid schema: {e}")
@@ -198,7 +202,7 @@ def event_correlate(
             })
     
     return {
-        "correlated_count": len(correlated),
+        "correlation_count": len(correlated),
         "correlated": correlated,
     }
 

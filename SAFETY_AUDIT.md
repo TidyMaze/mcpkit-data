@@ -35,9 +35,9 @@
 - `avro_decode` - Decode Avro (in-memory, read-only)
 - `protobuf_decode` - Decode Protobuf (in-memory, read-only)
 
-### JDBC (Guarded Read-Only)
-- `jdbc_query_ro` - Read-only SQL queries (guarded: rejects DROP/INSERT/UPDATE/DELETE/ALTER/CREATE/TRUNCATE)
-- `jdbc_introspect` - Schema introspection (read-only)
+### Database (Guarded Read-Only)
+- `db_query_ro` - Read-only SQL queries (guarded: rejects DROP/INSERT/UPDATE/DELETE/ALTER/CREATE/TRUNCATE)
+- `db_introspect` - Schema introspection (read-only)
 
 ### AWS (Read-Only)
 - `athena_poll_query` - Poll query status (read-only)
@@ -149,7 +149,7 @@
 - ✅ Export writes scoped to `MCPKIT_ARTIFACT_DIR`
 
 ### SQL Protection
-- ✅ JDBC queries validated for read-only (rejects DROP/INSERT/UPDATE/DELETE/ALTER/CREATE/TRUNCATE)
+- ✅ Database queries validated for read-only (rejects DROP/INSERT/UPDATE/DELETE/ALTER/CREATE/TRUNCATE)
 - ✅ Only SELECT/WITH/EXPLAIN allowed
 - ✅ Multiple statements rejected
 
@@ -182,6 +182,6 @@
 
 **Security Improvements**:
 - `http_request`: POST disabled by default, requires explicit opt-in
-- `athena_start_query`: SQL validation added (reuses `validate_sql_readonly` from `jdbc_query_ro`)
+- `athena_start_query`: SQL validation added (reuses `validate_sql_readonly` from `db_query_ro`)
 - Both tools now enforce read-only by default, with opt-out for advanced use cases
 

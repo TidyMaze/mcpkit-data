@@ -24,6 +24,7 @@ def parquet_inspect(path: str, sample_rows: int = 20) -> dict:
         return {
             "path": str(resolved_path),
             "num_rows": parquet_file.metadata.num_rows,
+            "row_count": parquet_file.metadata.num_rows,  # Alias for compatibility
             "num_row_groups": parquet_file.num_row_groups,
             "schema": {
                 "fields": [
@@ -78,8 +79,20 @@ def arrow_convert(
             import pyarrow.csv as csv
             csv.write_csv(table, str(output_path))
         elif output_format.upper() == "JSON":
-            import pyarrow.json as json
-            json.write_json(table, str(output_path))
+            # pyarrow.json.write_json may not be available in all versions
+            # Use pandas as fallback
+            try:
+                import pyarrow.json as json
+                if hasattr(json, 'write_json'):
+                    json.write_json(table, str(output_path))
+                else:
+                    # Fallback to pandas
+                    df = table.to_pandas()
+                    df.to_json(output_path, orient="records", lines=True, date_format="iso")
+            except (ImportError, AttributeError):
+                # Fallback to pandas
+                df = table.to_pandas()
+                df.to_json(output_path, orient="records", lines=True, date_format="iso")
         else:
             raise GuardError(f"Unsupported output format: {output_format}")
         

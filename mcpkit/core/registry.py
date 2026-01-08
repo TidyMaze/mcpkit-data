@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -34,14 +34,14 @@ def ensure_dataset_dir():
     get_dataset_dir().mkdir(parents=True, exist_ok=True)
 
 
-def load_index() -> dict:
+def load_index() -> dict[str, Any]:
     """Load index.json, return dict mapping dataset_id to metadata."""
     index_path = get_index_path()
     if not index_path.exists():
         return {}
     try:
         with open(index_path, "r") as f:
-            return json.load(f)
+            return json.load(f)  # type: ignore[no-any-return]
     except (json.JSONDecodeError, IOError) as e:
         # Return empty on error rather than raising
         return {}
@@ -89,11 +89,24 @@ def dataset_info(dataset_id: str) -> dict:
         **meta
     }
     
-    # Add current file info if exists
+    # Always ensure row_count is set from available sources
+    # Priority: file exists > current_rows in meta > rows in meta
     if path.exists():
         df = pd.read_parquet(path)
         result["current_rows"] = len(df)
+        result["row_count"] = len(df)  # Alias for compatibility
         result["current_columns"] = list(df.columns)
+    else:
+        # If file doesn't exist, use metadata
+        if "current_rows" in result:
+            result["row_count"] = result["current_rows"]
+        elif "rows" in result:
+            result["row_count"] = result["rows"]
+            result["current_rows"] = result["rows"]
+        else:
+            # Fallback: set to 0 if no row info available
+            result["row_count"] = 0
+            result["current_rows"] = 0
     
     return result
 
@@ -175,6 +188,131 @@ def dataset_delete(dataset_id: str) -> dict:
     return {"dataset_id": dataset_id, "deleted": True}
 
 
+def dataset_purge(
+    older_than_days: Optional[int] = None,
+    pattern: Optional[str] = None,
+    max_delete: Optional[int] = None,
+    purge_artifacts: Optional[bool] = None,
+) -> dict:
+    """
+    Purge datasets matching criteria (age or pattern).
+    
+    Args:
+        older_than_days: Delete datasets older than N days
+        pattern: Delete datasets matching pattern (substring match in dataset_id)
+        max_delete: Maximum number of datasets to delete (safety limit)
+        purge_artifacts: If True, also purge artifacts. If None, auto-purge when no filters.
+    
+    Returns:
+        dict with deleted_count, deleted_dataset_ids, and artifact_deleted_count
+    """
+    from .evidence import get_artifact_dir
+    
+    index = load_index()
+    now = datetime.now()
+    
+    # Auto-purge artifacts if no filters (purging all)
+    if purge_artifacts is None:
+        purge_artifacts = (older_than_days is None and pattern is None)
+    
+    to_delete = []
+    
+    for dataset_id, meta in index.items():
+        should_delete = False
+        
+        # Check age filter
+        if older_than_days is not None:
+            if "created_at" in meta:
+                try:
+                    created = datetime.fromisoformat(meta["created_at"].replace("Z", "+00:00"))
+                    age_days = (now - created.replace(tzinfo=None)).days
+                    if age_days >= older_than_days:
+                        should_delete = True
+                except (ValueError, TypeError):
+                    pass
+        
+        # Check pattern filter
+        if pattern and pattern in dataset_id:
+            should_delete = True
+        
+        if should_delete:
+            to_delete.append(dataset_id)
+    
+    # Apply max_delete limit
+    if max_delete and len(to_delete) > max_delete:
+        to_delete = to_delete[:max_delete]
+    
+    deleted_count = 0
+    deleted_ids = []
+    errors = []
+    
+    for dataset_id in to_delete:
+        try:
+            check_filename_safe(dataset_id)
+            path = get_dataset_path(dataset_id)
+            if path.exists():
+                path.unlink()
+            del index[dataset_id]
+            deleted_count += 1
+            deleted_ids.append(dataset_id)
+        except Exception as e:
+            errors.append(f"{dataset_id}: {str(e)}")
+    
+    if deleted_count > 0:
+        save_index(index)
+    
+    # Purge artifacts
+    artifact_deleted_count = 0
+    if purge_artifacts:
+        try:
+            artifact_dir = get_artifact_dir()
+            if artifact_dir.exists():
+                # If no filters, delete all artifacts
+                if older_than_days is None and pattern is None:
+                    for artifact_file in artifact_dir.iterdir():
+                        if artifact_file.is_file() and artifact_file.name != ".gitkeep":
+                            try:
+                                artifact_file.unlink()
+                                artifact_deleted_count += 1
+                            except Exception as e:
+                                errors.append(f"artifact {artifact_file.name}: {str(e)}")
+                else:
+                    # With filters, delete artifacts matching pattern or older than threshold
+                    for artifact_file in artifact_dir.iterdir():
+                        if artifact_file.is_file() and artifact_file.name != ".gitkeep":
+                            should_delete_artifact = False
+                            
+                            # Check pattern match
+                            if pattern and pattern in artifact_file.name:
+                                should_delete_artifact = True
+                            
+                            # Check age
+                            if older_than_days is not None:
+                                try:
+                                    mtime = datetime.fromtimestamp(artifact_file.stat().st_mtime)
+                                    age_days = (now - mtime).days
+                                    if age_days >= older_than_days:
+                                        should_delete_artifact = True
+                                except Exception:
+                                    pass
+                            
+                            if should_delete_artifact:
+                                try:
+                                    artifact_file.unlink()
+                                    artifact_deleted_count += 1
+                                except Exception as e:
+                                    errors.append(f"artifact {artifact_file.name}: {str(e)}")
+        except Exception as e:
+            errors.append(f"artifact purge: {str(e)}")
+    
+    return {
+        "deleted_count": deleted_count,
+        "deleted_dataset_ids": deleted_ids,
+        "artifact_deleted_count": artifact_deleted_count,
+        "errors": errors if errors else None,
+    }
+
+
 def load_dataset(dataset_id: str) -> pd.DataFrame:
     """Load dataset as pandas DataFrame."""
     check_filename_safe(dataset_id)
@@ -207,5 +345,6 @@ def save_dataset(df: pd.DataFrame, dataset_id: Optional[str] = None) -> dict:
         "dataset_id": dataset_id,
         "rows": len(df),
         "columns": list(df.columns),
+        "path": str(path),
     }
 
