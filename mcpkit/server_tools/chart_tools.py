@@ -35,12 +35,12 @@ def register_chart_tools(mcp: FastMCP):
         result = chart_ops.dataset_to_chart(
             dataset_id=dataset_id,
             path=path,
-            input_format=input_format,
+            input_format=input_format,  # type: ignore[arg-type]
             goal=goal,
             hints=hints,
             max_rows=max_rows,
             output_filename=output_filename,
-            output_format=output_format,
+            output_format=output_format,  # type: ignore[arg-type]
         )
         return ChartResponse(**result)
 

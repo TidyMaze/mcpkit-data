@@ -128,16 +128,16 @@ def nomad_get_allocation_logs(
         # The server will route the request to the appropriate client
         logs_url = f"{base_url}/v1/client/fs/logs/{allocation_id}"
         
-        params = {
+        params: dict[str, str | int] = {
             "task": task_name,
             "type": log_type,
             "origin": "start",
-            "offset": offset,
-            "limit": limit,
+            "offset": str(offset),
+            "limit": str(limit),
             "plain": "true"  # Get plain text, not JSON
         }
         
-        logs_response = requests.get(logs_url, params=params, timeout=30)
+        logs_response = requests.get(logs_url, params=params, timeout=30)  # type: ignore[arg-type]
         logs_response.raise_for_status()
         
         # Logs are returned as plain text

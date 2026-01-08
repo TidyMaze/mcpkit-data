@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -34,14 +34,14 @@ def ensure_dataset_dir():
     get_dataset_dir().mkdir(parents=True, exist_ok=True)
 
 
-def load_index() -> dict:
+def load_index() -> dict[str, Any]:
     """Load index.json, return dict mapping dataset_id to metadata."""
     index_path = get_index_path()
     if not index_path.exists():
         return {}
     try:
         with open(index_path, "r") as f:
-            return json.load(f)
+            return json.load(f)  # type: ignore[no-any-return]
     except (json.JSONDecodeError, IOError) as e:
         # Return empty on error rather than raising
         return {}
@@ -89,11 +89,24 @@ def dataset_info(dataset_id: str) -> dict:
         **meta
     }
     
-    # Add current file info if exists
+    # Always ensure row_count is set from available sources
+    # Priority: file exists > current_rows in meta > rows in meta
     if path.exists():
         df = pd.read_parquet(path)
         result["current_rows"] = len(df)
+        result["row_count"] = len(df)  # Alias for compatibility
         result["current_columns"] = list(df.columns)
+    else:
+        # If file doesn't exist, use metadata
+        if "current_rows" in result:
+            result["row_count"] = result["current_rows"]
+        elif "rows" in result:
+            result["row_count"] = result["rows"]
+            result["current_rows"] = result["rows"]
+        else:
+            # Fallback: set to 0 if no row info available
+            result["row_count"] = 0
+            result["current_rows"] = 0
     
     return result
 

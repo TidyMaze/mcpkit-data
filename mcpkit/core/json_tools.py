@@ -49,7 +49,12 @@ def jq_transform(data: Any, expression: str) -> dict:
             data = json.loads(data)
         except json.JSONDecodeError:
             # If it's not JSON, use as-is (might be a plain string value)
-            pass
+            # For plain strings with "." expression, just return the string
+            if expression == ".":
+                return {"result": data}
+            # Otherwise, wrap in a dict so JMESPath can work with it
+            data = {"value": data}
+            expression = "value" if expression == "." else expression
     
     try:
         result = jmespath.search(expression, data)

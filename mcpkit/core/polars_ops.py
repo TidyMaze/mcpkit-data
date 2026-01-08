@@ -154,5 +154,6 @@ def polars_export(dataset_id: str, format: str, filename: str) -> dict:
         "format": format,
         "filename": filename,
         "path": str(path),
+        "artifact_path": str(path),  # Alias for compatibility
     }
 

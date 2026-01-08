@@ -29,8 +29,8 @@ def register_db_tools(mcp: FastMCP):
         max_tables: Annotated[Optional[Union[int, str]], Field(description="Maximum tables to return. Default: 200")] = 200,
     ) -> DBIntrospectResponse:
         """Introspect database schema."""
-        max_tables = _to_int(max_tables, 200)
-        result = db.db_introspect(schema_like, table_like, max_tables)
+        max_tables_int: int = _to_int(max_tables, 200)  # type: ignore[assignment]
+        result = db.db_introspect(schema_like, table_like, max_tables_int)
         tables = [DBTable(**t) for t in result["tables"]]
         return DBIntrospectResponse(tables=tables, table_count=result["table_count"])
 

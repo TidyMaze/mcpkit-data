@@ -99,7 +99,9 @@ def register_pandas_tools(mcp: FastMCP):
     ) -> DatasetDiffResponse:
         """Compare two datasets and find differences."""
         max_changed = _to_int(max_changed, 200)
-        result = pandas_ops.pandas_diff_frames(dataset_a, dataset_b, key_cols, compare_cols, max_changed)
+        # _list_validator converts str to list[str], but mypy doesn't know that
+        compare_cols_list: Optional[list[str]] = _list_validator(compare_cols) if compare_cols is not None else None  # type: ignore[assignment]
+        result = pandas_ops.pandas_diff_frames(dataset_a, dataset_b, key_cols, compare_cols_list, max_changed)
         return DatasetDiffResponse(**result)
 
     @mcp.tool()
@@ -110,7 +112,10 @@ def register_pandas_tools(mcp: FastMCP):
         non_null_columns: Annotated[Optional[Union[list[str], str]], BeforeValidator(_list_validator), Field(description="Optional list of columns that must not be null")] = None,
     ) -> SchemaCheckResponse:
         """Check dataset schema constraints."""
-        result = pandas_ops.pandas_schema_check(dataset_id, required_columns, dtype_overrides, non_null_columns)
+        # _list_validator converts str to list[str], but mypy doesn't know that
+        required_columns_list: Optional[list[str]] = _list_validator(required_columns) if required_columns is not None else None  # type: ignore[assignment]
+        non_null_columns_list: Optional[list[str]] = _list_validator(non_null_columns) if non_null_columns is not None else None  # type: ignore[assignment]
+        result = pandas_ops.pandas_schema_check(dataset_id, required_columns_list, dtype_overrides, non_null_columns_list)
         return SchemaCheckResponse(**result)
 
     @mcp.tool()
@@ -135,7 +140,7 @@ def register_pandas_tools(mcp: FastMCP):
         """Random sampling from dataset."""
         n = _to_int(n, None)
         seed = _to_int(seed, None)
-        result = pandas_ops.pandas_sample_random(dataset_id, n, out_dataset_id, seed)
+        result = pandas_ops.pandas_sample_random(dataset_id, n, out_dataset_id, seed)  # type: ignore[arg-type]
         return DatasetOperationResponse(**result)
 
     @mcp.tool()
@@ -144,7 +149,9 @@ def register_pandas_tools(mcp: FastMCP):
         columns: Annotated[Optional[Union[list[str], str]], BeforeValidator(_list_validator), Field(description="Optional list of columns to count. If None, counts all columns.")] = None,
     ) -> DistinctCountsResponse:
         """Count distinct values per column."""
-        result = pandas_ops.pandas_count_distinct(dataset_id, columns)
+        # _list_validator converts str to list[str], but mypy doesn't know that
+        columns_list: Optional[list[str]] = _list_validator(columns) if columns is not None else None  # type: ignore[assignment]
+        result = pandas_ops.pandas_count_distinct(dataset_id, columns_list)
         return DistinctCountsResponse(**result)
 
     @mcp.tool()
@@ -217,8 +224,10 @@ def register_pandas_tools(mcp: FastMCP):
         - Skips invalid JSON with warning (doesn't fail entire operation)
         - Returns error if all JSON is invalid (no valid rows found)
         """
+        # _list_validator converts str to list[str], but mypy doesn't know that
+        target_columns_list: Optional[list[str]] = _list_validator(target_columns) if target_columns is not None else None  # type: ignore[assignment]
         result = pandas_ops.pandas_parse_json_column(
-            dataset_id, column, expand_arrays, target_columns, out_dataset_id
+            dataset_id, column, expand_arrays, target_columns_list, out_dataset_id
         )
         return DatasetOperationResponse(**result)
 
@@ -230,5 +239,8 @@ def register_pandas_tools(mcp: FastMCP):
     ) -> ExportResponse:
         """Export dataset to file in artifact directory."""
         result = pandas_ops.pandas_export(dataset_id, format, filename)
+        # Ensure artifact_path is set (may already be in result)
+        if "artifact_path" not in result:
+            result["artifact_path"] = result["path"]
         return ExportResponse(**result)
 

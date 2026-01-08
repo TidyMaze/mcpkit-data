@@ -38,14 +38,14 @@ def test_duckdb_query_local_multiple_sources_mcp(mcp_client, clean_registry):
     create_test_dataset(mcp_client, "right_ds", ["id", "value"], [[1, 10], [2, 20]])
     
     sources = json.dumps([
-        {"name": "left", "dataset_id": "left_ds"},
-        {"name": "right", "dataset_id": "right_ds"}
+        {"name": "left_table", "dataset_id": "left_ds"},
+        {"name": "right_table", "dataset_id": "right_ds"}
     ])
     
     response = call_tool(
         mcp_client,
         "duckdb_query_local",
-        sql="SELECT l.id, l.name, r.value FROM left l JOIN right r ON l.id = r.id",
+        sql="SELECT l.id, l.name, r.value FROM left_table l JOIN right_table r ON l.id = r.id",
         sources=sources
     )
     

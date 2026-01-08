@@ -29,7 +29,7 @@ def pandas_describe(dataset_id: str, include: str = "all") -> dict:
         else:
             include_param = include  # "all" or other valid values
 
-        desc = df.describe(include=include_param)
+        desc = df.describe(include=include_param)  # type: ignore[arg-type]
         # Handle empty describe (e.g., when include="number" but no numeric columns)
         description_dict = desc.to_dict() if not desc.empty else None
     except (ValueError, TypeError) as e:
@@ -95,7 +95,7 @@ def pandas_join(
     left_df = load_dataset(left_dataset_id)
     right_df = load_dataset(right_dataset_id)
 
-    merged = pd.merge(left_df, right_df, on=keys, how=how)
+    merged = pd.merge(left_df, right_df, on=keys, how=how)  # type: ignore[arg-type]
 
     if out_dataset_id:
         result = save_dataset(merged, out_dataset_id)
@@ -254,7 +254,7 @@ def pandas_schema_check(
                     issues.append({
                         "type": "null_values",
                         "column": col,
-                        "null_count": int(null_count),
+                        "null_count": int(null_count),  # type: ignore[dict-item]
                     })
 
     # Convert issues to error strings for response
@@ -286,10 +286,14 @@ def pandas_sample_stratified(
     """Stratified sampling."""
     df = load_dataset(dataset_id)
 
-    sampled = df.groupby(strata_cols, group_keys=False).apply(
-        lambda x: x.sample(min(n_per_group, len(x))),
-        include_groups=False
-    ).reset_index(drop=True)
+    # Pandas groupby.apply has strict type requirements, but our lambda is valid at runtime
+    # Use manual iteration to avoid pandas type stub limitations
+    sampled_dfs: list[pd.DataFrame] = []
+    for _, group in df.groupby(strata_cols):
+        sampled_dfs.append(group.sample(min(n_per_group, len(group))))
+    sampled_df = pd.concat(sampled_dfs, ignore_index=True)
+    # Cast to DataFrame (apply can return Series, but reset_index makes it DataFrame)
+    sampled: pd.DataFrame = pd.DataFrame(sampled_df) if not isinstance(sampled_df, pd.DataFrame) else sampled_df  # type: ignore[arg-type]
 
     if out_dataset_id:
         result = save_dataset(sampled, out_dataset_id)
@@ -358,6 +362,7 @@ def pandas_export(dataset_id: str, format: str, filename: str) -> dict:
         "format": format,
         "filename": filename,
         "path": str(path),
+        "artifact_path": str(path),  # Alias for compatibility
     }
 
 

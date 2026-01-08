@@ -32,6 +32,7 @@ def register_formats_tools(mcp: FastMCP):
         return ParquetInspectResponse(
             path=result["path"],
             num_rows=result["num_rows"],
+            row_count=result.get("row_count", result["num_rows"]),  # Alias for compatibility
             num_row_groups=result["num_row_groups"],
             schema=schema,
             sample_rows=result["sample_rows"]

@@ -265,7 +265,7 @@ def kafka_consume_batch(
             if partitions:
                 consumer.seek_to_beginning(*partitions)
         
-        records = []
+        records: list[dict[str, Any]] = []
         limit = max_records if max_records else get_max_records()
         
         # Use poll with timeout instead of iterator to avoid hanging
@@ -735,7 +735,7 @@ def _flatten_dict(d: dict, parent_key: str = "", sep: str = "_") -> dict:
     Returns:
         Flattened dictionary
     """
-    items = []
+    items: list[tuple[str, Any]] = []
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
         if isinstance(v, dict):
@@ -770,8 +770,8 @@ def kafka_flatten_records(records: list[dict]) -> dict:
         }
     
     # Process all records to collect all possible columns
-    flattened_records = []
-    all_columns = set()
+    flattened_records: list[dict[str, Any]] = []
+    all_columns: set[str] = set()
     
     for record in records:
         flat = {
@@ -906,16 +906,18 @@ def kafka_flatten_dataset(dataset_id: str, out_dataset_id: Optional[str] = None)
         result = kafka_flatten_records(records)
     
     # Save as new dataset
-    if result["rows"]:
-        df_out = pd.DataFrame(result["rows"], columns=result["columns"])
+    rows: list[list[Any]] = result["rows"]  # type: ignore[assignment]
+    columns: list[str] = result["columns"]  # type: ignore[assignment]
+    if rows:
+        df_out = pd.DataFrame(rows, columns=columns)
     else:
-        df_out = pd.DataFrame(columns=result["columns"])
+        df_out = pd.DataFrame(columns=columns)
     
     save_result = save_dataset(df_out, out_dataset_id)
     
     return {
         "dataset_id": save_result["dataset_id"],
         "columns": result["columns"],
-        "rows": len(result["rows"]),
+        "rows": len(result["rows"]),  # type: ignore[arg-type]
         "record_count": result["record_count"],
     }

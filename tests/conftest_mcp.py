@@ -52,7 +52,7 @@ def _get_docker_compose_cmd():
 def docker_services():
     """Start Docker services for integration tests.
     
-    Starts: Kafka, Schema Registry, PostgreSQL
+    Starts: Kafka, Schema Registry, PostgreSQL, LocalStack (AWS), Consul, Nomad
     """
     compose_cmd = _get_docker_compose_cmd()
     compose_dir = Path(__file__).parent.parent
@@ -68,9 +68,9 @@ def docker_services():
     # Wait for services to be ready
     print("Waiting for services to be ready...")
     max_wait = 120
-    waited = 0
     
     # Check Kafka
+    waited = 0
     while waited < max_wait:
         try:
             from kafka import KafkaConsumer
@@ -104,7 +104,7 @@ def docker_services():
             import psycopg2
             conn = psycopg2.connect(
                 host="localhost",
-                port=5432,
+                port=5433,  # Use mapped port
                 user="testuser",
                 password="testpass",
                 database="testdb",
@@ -113,6 +113,50 @@ def docker_services():
             conn.close()
             print("PostgreSQL is ready!")
             break
+        except Exception:
+            pass
+        time.sleep(2)
+        waited += 2
+    
+    # Check LocalStack
+    waited = 0
+    while waited < max_wait:
+        try:
+            import requests
+            response = requests.get("http://localhost:4566/_localstack/health", timeout=2)
+            if response.status_code == 200:
+                health = response.json()
+                if health.get("services", {}).get("s3") == "running":
+                    print("LocalStack is ready!")
+                    break
+        except Exception:
+            pass
+        time.sleep(2)
+        waited += 2
+    
+    # Check Consul
+    waited = 0
+    while waited < max_wait:
+        try:
+            import requests
+            response = requests.get("http://localhost:8500/v1/status/leader", timeout=2)
+            if response.status_code == 200:
+                print("Consul is ready!")
+                break
+        except Exception:
+            pass
+        time.sleep(2)
+        waited += 2
+    
+    # Check Nomad
+    waited = 0
+    while waited < max_wait:
+        try:
+            import requests
+            response = requests.get("http://localhost:4646/v1/status/leader", timeout=2)
+            if response.status_code == 200:
+                print("Nomad is ready!")
+                break
         except Exception:
             pass
         time.sleep(2)
@@ -129,33 +173,26 @@ def docker_services():
     # )
 
 
-@pytest.fixture(scope="function")
-def aws_mock(monkeypatch):
-    """Setup AWS mocks using moto.
+@pytest.fixture
+def aws_setup(docker_services, monkeypatch):
+    """Setup AWS environment using LocalStack.
     
-    This fixture starts moto mocks for all AWS services (Athena, S3, Glue).
-    Each test function gets fresh mocks.
+    Configures AWS endpoints to point to LocalStack for S3, Athena, Glue.
     """
-    try:
-        from moto import mock_aws
-        
-        # Set dummy AWS credentials for moto
-        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
-        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
-        monkeypatch.setenv("AWS_SECURITY_TOKEN", "testing")
-        monkeypatch.setenv("AWS_SESSION_TOKEN", "testing")
-        monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-        
-        # Start AWS mocks (moto 5.x uses mock_aws for all services)
-        aws_mock = mock_aws()
-        aws_mock.start()
-        
-        yield aws_mock
-        
-        # Stop mocks
-        aws_mock.stop()
-    except ImportError:
-        pytest.skip("moto not installed, skipping AWS mock tests")
+    # Configure boto3 to use LocalStack
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    
+    # LocalStack endpoint
+    localstack_endpoint = "http://localhost:4566"
+    monkeypatch.setenv("AWS_ENDPOINT_URL", localstack_endpoint)
+    monkeypatch.setenv("AWS_ENDPOINT_URL_S3", f"{localstack_endpoint}")
+    monkeypatch.setenv("AWS_ENDPOINT_URL_ATHENA", f"{localstack_endpoint}")
+    monkeypatch.setenv("AWS_ENDPOINT_URL_GLUE", f"{localstack_endpoint}")
+    
+    yield localstack_endpoint
 
 
 @pytest.fixture
@@ -177,15 +214,47 @@ def db_setup(docker_services, monkeypatch):
     except ImportError:
         pytest.skip("psycopg2 not available, skipping database tests")
     
+    # Try to connect to verify database is available (try both ports)
+    conn = None
+    db_url = None
+    for port in [5433, 5432]:
+        try:
+            test_url = f"postgresql://testuser:testpass@localhost:{port}/testdb"
+            conn = psycopg2.connect(test_url, connect_timeout=2)
+            conn.close()
+            db_url = test_url
+            break
+        except Exception:
+            continue
+    
+    if db_url is None:
+        pytest.skip("PostgreSQL not available with test credentials, skipping database tests")
+    
     # Set database connection URL (native PostgreSQL format)
-    monkeypatch.setenv("MCPKIT_DB_URL", "postgresql://testuser:testpass@localhost:5432/testdb")
+    monkeypatch.setenv("MCPKIT_DB_URL", db_url)
     
     # Also set legacy JDBC-style env vars for backward compatibility
-    monkeypatch.setenv("MCPKIT_JDBC_URL", "jdbc:postgresql://localhost:5432/testdb")
+    monkeypatch.setenv("MCPKIT_JDBC_URL", "jdbc:postgresql://localhost:5433/testdb")
     monkeypatch.setenv("MCPKIT_JDBC_USER", "testuser")
     monkeypatch.setenv("MCPKIT_JDBC_PASSWORD", "testpass")
     
     yield
+
+
+@pytest.fixture
+def nomad_setup(docker_services, monkeypatch):
+    """Setup Nomad environment for tests."""
+    nomad_addr = "http://localhost:4646"
+    monkeypatch.setenv("MCPKIT_NOMAD_ADDRESS", nomad_addr)
+    yield nomad_addr
+
+
+@pytest.fixture
+def consul_setup(docker_services, monkeypatch):
+    """Setup Consul environment for tests."""
+    consul_addr = "localhost:8500"
+    monkeypatch.setenv("MCPKIT_CONSUL_ADDRESS", consul_addr)
+    yield consul_addr
 
 
 @pytest.fixture(scope="session")
@@ -218,8 +287,17 @@ def mcp_client():
         
         async def _ensure_session(self):
             """Ensure MCP session is initialized (lazy initialization)."""
+            # Check if environment variables changed (e.g., MCPKIT_ROOTS from clean_roots fixture)
+            # If so, invalidate the session to pick up new env vars
+            current_roots = os.environ.get("MCPKIT_ROOTS")
             if self._initialized and self._session:
-                return self._session
+                # If roots changed, we need to recreate the session
+                if hasattr(self, "_last_roots") and self._last_roots != current_roots:
+                    # Environment changed, close old session
+                    await self._close_session()
+                else:
+                    return self._session
+            self._last_roots = current_roots
             
             # Create server parameters for stdio transport
             # Enable coverage for subprocess (coverage.py subprocess support)
@@ -242,6 +320,13 @@ def mcp_client():
                 # Prepend coverage run to command
                 # This ensures the subprocess runs with coverage tracking
                 pass  # Coverage will auto-start if COVERAGE_PROCESS_START is set
+            
+            # Pass through MCPKIT_ROOTS and MCPKIT_ALLOWED_ROOTS to server subprocess
+            # This allows tests to set allowed roots via clean_roots fixture
+            if "MCPKIT_ROOTS" in os.environ:
+                env["MCPKIT_ROOTS"] = os.environ["MCPKIT_ROOTS"]
+            if "MCPKIT_ALLOWED_ROOTS" in os.environ:
+                env["MCPKIT_ALLOWED_ROOTS"] = os.environ["MCPKIT_ALLOWED_ROOTS"]
             
             server_params = StdioServerParameters(
                 command=sys.executable,
@@ -269,6 +354,25 @@ def mcp_client():
             self._initialized = True
             
             return self._session
+        
+        async def _close_session(self):
+            """Close current session and cleanup resources."""
+            if self._session_ctx:
+                try:
+                    await self._session_ctx.__aexit__(None, None, None)
+                except Exception:
+                    pass
+                self._session_ctx = None
+            if self._stdio_ctx:
+                try:
+                    await self._stdio_ctx.__aexit__(None, None, None)
+                except Exception:
+                    pass
+                self._stdio_ctx = None
+            self._session = None
+            self._read = None
+            self._write = None
+            self._initialized = False
         
         def call_tool_sync(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             """Call an MCP tool via full protocol.

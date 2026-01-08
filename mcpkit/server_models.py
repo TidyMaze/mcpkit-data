@@ -21,11 +21,13 @@ class DatasetInfo(BaseModel):
 class DatasetListResponse(BaseModel):
     """Response for listing datasets."""
     datasets: list[DatasetInfo] = Field(description="List of datasets")
+    dataset_count: int = Field(description="Number of datasets")
 
 
 class DatasetInfoResponse(DatasetInfo):
     """Response for dataset info."""
     current_rows: int = Field(description="Current number of rows (from file)")
+    row_count: int = Field(description="Number of rows (alias for current_rows)")
     current_columns: list[str] = Field(description="Current columns (from file)")
 
 
@@ -94,10 +96,10 @@ class SchemaRegistryResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     schema_id: int = Field(description="Schema ID")
-    subject: Optional[str] = Field(description="Subject name (if subject provided)")
-    version: Optional[int] = Field(description="Schema version (if subject provided)")
+    subject: Optional[str] = Field(default=None, description="Subject name (if subject provided)")
+    version: Optional[int] = Field(default=None, description="Schema version (if subject provided)")
     schema_json: dict = Field(description="Schema as JSON")
-    schema_string: str = Field(description="Schema as string")
+    schema_string: Optional[str] = Field(default=None, description="Schema as string")
 
 
 class SchemaRegistryListResponse(BaseModel):
@@ -233,7 +235,9 @@ class CorrelatedEvent(BaseModel):
 class CorrelateResponse(BaseModel):
     """Response for event correlation."""
     correlated: list[CorrelatedEvent] = Field(description="Correlated events")
+    correlated_events: list[CorrelatedEvent] = Field(description="Correlated events (alias)")
     correlation_count: int = Field(description="Number of correlations")
+    correlated_count: int = Field(description="Number of correlations (alias)")
 
 
 # ============================================================================
@@ -277,6 +281,7 @@ class ExportResponse(BaseModel):
     format: str = Field(description="Export format")
     filename: str = Field(description="Output filename")
     path: str = Field(description="Full path to exported file")
+    artifact_path: str = Field(description="Path to artifact (alias for path)")
 
 
 # ============================================================================
@@ -301,6 +306,7 @@ class ParquetInspectResponse(BaseModel):
 
     path: str = Field(description="File path")
     num_rows: int = Field(description="Number of rows")
+    row_count: int = Field(description="Number of rows (alias for num_rows)")
     num_row_groups: int = Field(description="Number of row groups")
     schema: ParquetSchema = Field(description="Parquet schema")
     sample_rows: list[dict] = Field(description="Sample rows")
@@ -324,6 +330,7 @@ class ReconcileResponse(BaseModel):
     only_in_left: int = Field(description="Records only in left dataset")
     only_in_right: int = Field(description="Records only in right dataset")
     in_both: int = Field(description="Records in both datasets")
+    mismatch_count: int = Field(description="Number of key mismatches")
     examples: list[dict] = Field(description="Sample differences")
 
 

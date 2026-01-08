@@ -22,7 +22,8 @@ def register_registry_tools(mcp: FastMCP):
     def dataset_list() -> DatasetListResponse:
         """List all datasets in registry."""
         result = registry.dataset_list()
-        return DatasetListResponse(datasets=[DatasetInfo(**d) for d in result["datasets"]])
+        datasets = [DatasetInfo(**d) for d in result["datasets"]]
+        return DatasetListResponse(datasets=datasets, dataset_count=len(datasets))
 
     @mcp.tool()
     def dataset_info(dataset_id: Annotated[str, Field(description="Dataset identifier (must be safe filename)")]) -> DatasetInfoResponse:

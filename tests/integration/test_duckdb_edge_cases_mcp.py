@@ -80,7 +80,7 @@ def test_duckdb_query_local_with_cte_mcp(mcp_client, clean_registry):
     )
     
     assert_response_structure(response, ["columns", "rows"])
-    assert response["row_count"] == 1  # Only id=2 has doubled_value > 15
+    assert response["row_count"] == 2  # Both rows have doubled_value > 15 (20 and 40)
 
 
 def test_duckdb_query_local_with_join_mcp(mcp_client, clean_registry):

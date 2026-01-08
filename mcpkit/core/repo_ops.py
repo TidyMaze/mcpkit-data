@@ -110,7 +110,7 @@ def fs_list_dir(path: str) -> dict:
             if item.name.startswith("."):
                 continue
             
-            item_info = {
+            item_info: dict[str, str | int | float | None] = {
                 "name": item.name,
                 "path": str(item),
             }

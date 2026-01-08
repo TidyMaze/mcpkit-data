@@ -12,30 +12,43 @@ from .guards import GuardError, cap_rows, get_max_rows, validate_sql_readonly
 def get_athena_client(region: Optional[str] = None):
     """Get Athena boto3 client.
 
-    Note: For testing with moto, ensure moto mocks are started before calling this.
+    Supports LocalStack for testing via AWS_ENDPOINT_URL_ATHENA env var.
     """
+    endpoint_url = os.getenv("AWS_ENDPOINT_URL_ATHENA") or os.getenv("AWS_ENDPOINT_URL")
     if region:
-        return boto3.client("athena", region_name=region)
+        kwargs = {"region_name": region}
+        if endpoint_url:
+            kwargs["endpoint_url"] = endpoint_url
+        return boto3.client("athena", **kwargs)
     # Try to get region from env
     region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+    kwargs = {}
     if region:
-        return boto3.client("athena", region_name=region)
-    return boto3.client("athena")
+        kwargs["region_name"] = region
+    if endpoint_url:
+        kwargs["endpoint_url"] = endpoint_url
+    return boto3.client("athena", **kwargs) if kwargs else boto3.client("athena")
 
 
 def get_s3_client():
     """Get S3 boto3 client.
 
-    Note: For testing with moto, ensure moto mocks are started before calling this.
+    Supports LocalStack for testing via AWS_ENDPOINT_URL_S3 env var.
     """
+    endpoint_url = os.getenv("AWS_ENDPOINT_URL_S3") or os.getenv("AWS_ENDPOINT_URL")
+    if endpoint_url:
+        return boto3.client("s3", endpoint_url=endpoint_url)
     return boto3.client("s3")
 
 
 def get_glue_client():
     """Get Glue boto3 client.
 
-    Note: For testing with moto, ensure moto mocks are started before calling this.
+    Supports LocalStack for testing via AWS_ENDPOINT_URL_GLUE env var.
     """
+    endpoint_url = os.getenv("AWS_ENDPOINT_URL_GLUE") or os.getenv("AWS_ENDPOINT_URL")
+    if endpoint_url:
+        return boto3.client("glue", endpoint_url=endpoint_url)
     return boto3.client("glue")
 
 
@@ -138,7 +151,7 @@ def athena_get_results(query_execution_id: str, max_rows: Optional[int] = None, 
         result_set = response["ResultSet"]
         columns = [col["Name"] for col in result_set["ResultSetMetadata"]["ColumnInfo"]]
 
-        rows = []
+        rows: list[list[str]] = []
         for row in result_set["Rows"][1:]:  # Skip header row
             if len(rows) >= max_rows:
                 break

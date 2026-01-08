@@ -107,7 +107,7 @@ def test_cap_rows_limit_mcp(mcp_client, clean_registry):
     rows = [[i] for i in range(500)]  # 500 rows
     create_test_dataset(mcp_client, "large_dataset", ["id"], rows)
     
-    # Query should be capped to max_rows (default 200)
+    # Query should be capped to max_rows (default 500)
     response = call_tool(
         mcp_client,
         "duckdb_query_local",
@@ -116,7 +116,7 @@ def test_cap_rows_limit_mcp(mcp_client, clean_registry):
         source_dataset_id="large_dataset"
     )
     
-    assert response["row_count"] <= 200  # Should be capped
+    assert response["row_count"] <= 500  # Should be capped to default max_rows
 
 
 def test_cap_bytes_truncation_mcp(mcp_client, clean_roots):

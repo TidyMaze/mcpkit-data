@@ -22,6 +22,6 @@ def register_dataset_ops_tools(mcp: FastMCP):
         """Get first N and/or last M rows from dataset (for debugging)."""
         head = _to_int(head, None)
         tail = _to_int(tail, None)
-        result = pandas_ops.pandas_head_tail(dataset_id, head, tail)
+        result = pandas_ops.pandas_head_tail(dataset_id, head, tail)  # type: ignore[arg-type]
         return DatasetHeadTailResponse(**result)
 

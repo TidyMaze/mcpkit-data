@@ -41,5 +41,8 @@ def register_polars_tools(mcp: FastMCP):
     ) -> ExportResponse:
         """Export dataset to file in artifact directory (Polars)."""
         result = polars_ops.polars_export(dataset_id, format, filename)
+        # Ensure artifact_path is set (may already be in result)
+        if "artifact_path" not in result:
+            result["artifact_path"] = result["path"]
         return ExportResponse(**result)
 

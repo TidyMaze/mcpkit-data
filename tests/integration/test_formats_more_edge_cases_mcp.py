@@ -123,8 +123,8 @@ def test_fs_list_dir_nested_mcp(mcp_client, clean_roots):
         path=str(nested_dir)
     )
     
-    assert_response_structure(response, ["path", "entries"])
-    assert len(response["entries"]) == 2
+    assert_response_structure(response, ["path", "files", "directories"])
+    assert len(response["files"]) == 2
 
 
 def test_rg_search_case_insensitive_mcp(mcp_client, clean_roots):

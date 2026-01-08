@@ -1,6 +1,6 @@
 """JSON tools for MCP server."""
 
-from typing import Annotated, Optional, Union
+from typing import Annotated, Any, Optional, Union
 
 from fastmcp import FastMCP
 from pydantic import BeforeValidator, Field
@@ -40,11 +40,13 @@ def register_json_tools(mcp: FastMCP):
 
     @mcp.tool()
     def event_fingerprint(
-        record: Annotated[dict, Field(description="Record dict or object")],
+        record: Annotated[Any, Field(description="Record dict or object")],
         fields: Annotated[Optional[Union[list[str], str]], BeforeValidator(_list_validator), Field(description="Optional list of field names to include (if None, uses all fields)")] = None,
     ) -> FingerprintResponse:
         """Generate fingerprint for record."""
-        result = json_tools.event_fingerprint(record, fields)
+        # _list_validator converts str to list[str], but mypy doesn't know that
+        fields_list: Optional[list[str]] = _list_validator(fields) if fields is not None else None  # type: ignore[assignment]
+        result = json_tools.event_fingerprint(record, fields_list)
         return FingerprintResponse(**result)
 
     @mcp.tool()
@@ -71,5 +73,10 @@ def register_json_tools(mcp: FastMCP):
             raise ValueError(f"batches must be a list, got {type(batches_list)}")
         result = json_tools.event_correlate(batches_list, join_key_jmes, timestamp_field)
         correlated = [CorrelatedEvent(**c) for c in result["correlated"]]
-        return CorrelateResponse(correlated=correlated, correlation_count=result["correlation_count"])
+        return CorrelateResponse(
+            correlated=correlated,
+            correlated_events=correlated,  # Alias
+            correlation_count=result["correlation_count"],
+            correlated_count=result["correlation_count"]  # Alias
+        )
 

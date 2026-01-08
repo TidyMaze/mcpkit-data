@@ -1,6 +1,6 @@
 """Kafka tools for MCP server."""
 
-from typing import Annotated, Optional, Union
+from typing import Annotated, Any, Optional, Union
 
 from fastmcp import FastMCP
 from pydantic import Field
@@ -70,7 +70,7 @@ def register_kafka_tools(mcp: FastMCP):
         from_offset = _to_int(from_offset, None)
         max_records = _to_int(max_records, None)
         timeout_secs = _to_int(timeout_secs, None)
-        result = kafka_client.kafka_consume_batch(topic, partition, from_offset, max_records, timeout_secs, bootstrap_servers, schema_registry_url)
+        result = kafka_client.kafka_consume_batch(topic, partition, from_offset, max_records, timeout_secs, bootstrap_servers, schema_registry_url)  # type: ignore[arg-type]
         return KafkaConsumeResponse(**result)
 
     @mcp.tool()
@@ -120,7 +120,7 @@ def register_kafka_tools(mcp: FastMCP):
         records_list = _parse_list_param(records, [])
         if not isinstance(records_list, list):
             raise GuardError(f"records must be a list, got {type(records_list)}")
-        groups = {}
+        groups: dict[str, list[Any]] = {}
         for record in records_list:
             try:
                 result = json_tools.jq_transform(record, key_jmes)
@@ -151,9 +151,9 @@ def register_kafka_tools(mcp: FastMCP):
         ] = None,
     ) -> KafkaConsumeResponse:
         """Consume last N messages from a Kafka topic (for debugging)."""
-        n_messages = _to_int(n_messages, 10)
-        partition = _to_int(partition, None)
-        result = kafka_client.kafka_consume_tail(topic, n_messages, partition, bootstrap_servers, schema_registry_url)
+        n_messages = _to_int(n_messages, 10)  # type: ignore[arg-type]
+        partition = _to_int(partition, None)  # type: ignore[arg-type]
+        result = kafka_client.kafka_consume_tail(topic, n_messages, partition, bootstrap_servers, schema_registry_url)  # type: ignore[arg-type]
         return KafkaConsumeResponse(**result)
 
     @mcp.tool()
@@ -165,7 +165,6 @@ def register_kafka_tools(mcp: FastMCP):
         ] = None,
     ) -> KafkaDescribeTopicResponse:
         """Get topic configuration, partitions, and replication information."""
-        from mcpkit.server_models import KafkaDescribeTopicResponse, KafkaPartitionInfo
         result = kafka_client.kafka_describe_topic(topic, bootstrap_servers)
         partitions = [KafkaPartitionInfo(**p) for p in result["partitions"]]
         return KafkaDescribeTopicResponse(

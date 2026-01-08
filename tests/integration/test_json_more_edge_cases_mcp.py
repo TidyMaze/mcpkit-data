@@ -126,8 +126,8 @@ def test_dedupe_by_id_nested_id_mcp(mcp_client):
         id_jmes="data.user.id"
     )
     
-    assert_response_structure(response, ["records", "count", "duplicate_count"])
-    assert response["count"] == 2  # Two unique IDs
+    assert_response_structure(response, ["records", "unique_count", "original_count"])
+    assert response["unique_count"] == 2  # Two unique IDs
 
 
 def test_dedupe_by_id_no_duplicates_mcp(mcp_client):
@@ -145,9 +145,9 @@ def test_dedupe_by_id_no_duplicates_mcp(mcp_client):
         id_jmes="id"
     )
     
-    assert_response_structure(response, ["records", "count", "duplicate_count"])
-    assert response["count"] == 3
-    assert response["duplicate_count"] == 0
+    assert_response_structure(response, ["records", "unique_count", "original_count"])
+    assert response["unique_count"] == 3
+    assert response["original_count"] == 3
 
 
 def test_event_correlate_multiple_batches_mcp(mcp_client):
