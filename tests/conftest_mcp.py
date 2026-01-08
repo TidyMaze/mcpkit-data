@@ -65,102 +65,95 @@ def docker_services():
         check=False,  # Don't fail if already running
     )
     
-    # Wait for services to be ready
+    # Wait for services to be ready (with shorter timeout and better error handling)
     print("Waiting for services to be ready...")
-    max_wait = 120
+    max_wait = int(os.getenv("MCPKIT_TEST_SERVICE_WAIT", "30"))  # Default 30s, configurable
     
-    # Check Kafka
-    waited = 0
-    while waited < max_wait:
-        try:
-            from kafka import KafkaConsumer
-            consumer = KafkaConsumer(bootstrap_servers=["localhost:9092"], consumer_timeout_ms=1000)
-            consumer.close()
-            print("Kafka is ready!")
-            break
-        except Exception:
-            pass
-        time.sleep(2)
-        waited += 2
+    def check_service(name, check_func, required=True):
+        """Check if a service is ready."""
+        waited = 0
+        while waited < max_wait:
+            try:
+                if check_func():
+                    print(f"{name} is ready!")
+                    return True
+            except Exception as e:
+                if waited >= max_wait - 2:  # Last attempt
+                    if required:
+                        print(f"WARNING: {name} not ready after {max_wait}s: {e}")
+                    else:
+                        print(f"INFO: {name} not available (optional): {e}")
+            time.sleep(1)
+            waited += 1
+        if required:
+            print(f"ERROR: {name} failed to start after {max_wait}s")
+        return False
     
-    # Check Schema Registry
-    waited = 0
-    while waited < max_wait:
-        try:
-            import requests
-            response = requests.get("http://localhost:8081/subjects", timeout=2)
-            if response.status_code in [200, 404]:  # 404 is OK, means registry is up
-                print("Schema Registry is ready!")
-                break
-        except Exception:
-            pass
-        time.sleep(2)
-        waited += 2
+    # Check Kafka (required)
+    try:
+        from kafka import KafkaConsumer
+        check_service("Kafka", lambda: (
+            KafkaConsumer(bootstrap_servers=["localhost:9092"], consumer_timeout_ms=500).close() or True
+        ), required=True)
+    except ImportError:
+        print("WARNING: kafka-python not installed, skipping Kafka check")
     
-    # Check PostgreSQL
-    waited = 0
-    while waited < max_wait:
-        try:
-            import psycopg2
-            conn = psycopg2.connect(
+    # Check Schema Registry (required)
+    try:
+        import requests
+        check_service("Schema Registry", lambda: (
+            requests.get("http://localhost:8081/subjects", timeout=1).status_code in [200, 404]
+        ), required=True)
+    except ImportError:
+        print("WARNING: requests not installed, skipping Schema Registry check")
+    
+    # Check PostgreSQL (required)
+    try:
+        import psycopg2
+        check_service("PostgreSQL", lambda: (
+            psycopg2.connect(
                 host="localhost",
-                port=5433,  # Use mapped port
+                port=5433,
                 user="testuser",
                 password="testpass",
                 database="testdb",
-                connect_timeout=2
-            )
-            conn.close()
-            print("PostgreSQL is ready!")
-            break
-        except Exception:
-            pass
-        time.sleep(2)
-        waited += 2
+                connect_timeout=1
+            ).close() or True
+        ), required=True)
+    except ImportError:
+        print("WARNING: psycopg2 not installed, skipping PostgreSQL check")
     
-    # Check LocalStack
-    waited = 0
-    while waited < max_wait:
-        try:
-            import requests
-            response = requests.get("http://localhost:4566/_localstack/health", timeout=2)
-            if response.status_code == 200:
-                health = response.json()
-                if health.get("services", {}).get("s3") == "running":
-                    print("LocalStack is ready!")
-                    break
-        except Exception:
-            pass
-        time.sleep(2)
-        waited += 2
+    # Check LocalStack (optional - only needed for AWS tests)
+    try:
+        import requests
+        check_service("LocalStack", lambda: (
+            requests.get("http://localhost:4566/_localstack/health", timeout=1).status_code == 200
+        ), required=False)
+    except ImportError:
+        pass
     
-    # Check Consul
-    waited = 0
-    while waited < max_wait:
-        try:
-            import requests
-            response = requests.get("http://localhost:8500/v1/status/leader", timeout=2)
-            if response.status_code == 200:
-                print("Consul is ready!")
-                break
-        except Exception:
-            pass
-        time.sleep(2)
-        waited += 2
+    # Check Consul (optional - only needed for infrastructure tests)
+    try:
+        import requests
+        check_service("Consul", lambda: (
+            requests.get("http://localhost:8500/v1/status/leader", timeout=1).status_code == 200
+        ), required=False)
+    except ImportError:
+        pass
     
-    # Check Nomad
-    waited = 0
-    while waited < max_wait:
+    # Check Nomad (optional - only needed for infrastructure tests)
+    # Use shorter timeout since Nomad can be slow to start
+    try:
+        import requests
+        # Quick check with very short timeout - don't block if slow
         try:
-            import requests
-            response = requests.get("http://localhost:4646/v1/status/leader", timeout=2)
+            response = requests.get("http://localhost:4646/v1/status/leader", timeout=0.5)
             if response.status_code == 200:
                 print("Nomad is ready!")
-                break
         except Exception:
-            pass
-        time.sleep(2)
-        waited += 2
+            print("INFO: Nomad not available (optional)")
+    except ImportError:
+        pass
     
     yield
     
@@ -287,17 +280,25 @@ def mcp_client():
         
         async def _ensure_session(self):
             """Ensure MCP session is initialized (lazy initialization)."""
-            # Check if environment variables changed (e.g., MCPKIT_ROOTS from clean_roots fixture)
+            # Check if environment variables changed (e.g., MCPKIT_ROOTS, MCPKIT_DB_URL, etc.)
             # If so, invalidate the session to pick up new env vars
-            current_roots = os.environ.get("MCPKIT_ROOTS")
+            # Track key env vars that affect server behavior
+            key_env_vars = {
+                "MCPKIT_ROOTS": os.environ.get("MCPKIT_ROOTS"),
+                "MCPKIT_DB_URL": os.environ.get("MCPKIT_DB_URL"),
+                "MCPKIT_JDBC_URL": os.environ.get("MCPKIT_JDBC_URL"),
+                "MCPKIT_KAFKA_BOOTSTRAP": os.environ.get("MCPKIT_KAFKA_BOOTSTRAP"),
+                "MCPKIT_SCHEMA_REGISTRY_URL": os.environ.get("MCPKIT_SCHEMA_REGISTRY_URL"),
+            }
+            
             if self._initialized and self._session:
-                # If roots changed, we need to recreate the session
-                if hasattr(self, "_last_roots") and self._last_roots != current_roots:
+                # If env vars changed, we need to recreate the session
+                if hasattr(self, "_last_env_vars") and self._last_env_vars != key_env_vars:
                     # Environment changed, close old session
                     await self._close_session()
                 else:
                     return self._session
-            self._last_roots = current_roots
+            self._last_env_vars = key_env_vars
             
             # Create server parameters for stdio transport
             # Enable coverage for subprocess (coverage.py subprocess support)
@@ -309,10 +310,11 @@ def mcp_client():
                 project_root = Path(__file__).parent.parent.parent
                 coverage_rc = project_root / ".coveragerc"
                 if coverage_rc.exists():
-                    env["COVERAGE_PROCESS_START"] = str(coverage_rc)
+                    # Use absolute path, properly quoted if needed
+                    env["COVERAGE_PROCESS_START"] = str(coverage_rc.absolute())
                 else:
                     # Fallback: use project root
-                    env["COVERAGE_PROCESS_START"] = str(project_root)
+                    env["COVERAGE_PROCESS_START"] = str(project_root.absolute())
             
             # Also ensure coverage is enabled in subprocess
             # Check if we're running under coverage
@@ -321,12 +323,11 @@ def mcp_client():
                 # This ensures the subprocess runs with coverage tracking
                 pass  # Coverage will auto-start if COVERAGE_PROCESS_START is set
             
-            # Pass through MCPKIT_ROOTS and MCPKIT_ALLOWED_ROOTS to server subprocess
-            # This allows tests to set allowed roots via clean_roots fixture
-            if "MCPKIT_ROOTS" in os.environ:
-                env["MCPKIT_ROOTS"] = os.environ["MCPKIT_ROOTS"]
-            if "MCPKIT_ALLOWED_ROOTS" in os.environ:
-                env["MCPKIT_ALLOWED_ROOTS"] = os.environ["MCPKIT_ALLOWED_ROOTS"]
+            # Pass through all MCPKIT_* environment variables to server subprocess
+            # This allows tests to configure the server via fixtures (db_setup, kafka_setup, etc.)
+            for key, value in os.environ.items():
+                if key.startswith("MCPKIT_"):
+                    env[key] = value
             
             server_params = StdioServerParameters(
                 command=sys.executable,
@@ -350,7 +351,7 @@ def mcp_client():
             self._session_ctx = session_ctx
             
             # Initialize session (handshake) with timeout
-            await asyncio.wait_for(self._session.initialize(), timeout=10.0)
+            await asyncio.wait_for(self._session.initialize(), timeout=5.0)
             self._initialized = True
             
             return self._session
@@ -391,7 +392,7 @@ def mcp_client():
                     # Call tool through full MCP protocol with timeout
                     result = await asyncio.wait_for(
                         session.call_tool(name, arguments),
-                        timeout=30.0  # 30 second timeout per call
+                        timeout=10.0  # 10 second timeout per call
                     )
                     
                     # Extract response content
@@ -438,7 +439,7 @@ def mcp_client():
                     # Fallback: return empty dict
                     return {}
                 except asyncio.TimeoutError:
-                    raise RuntimeError(f"MCP tool '{name}' call timed out after 30s")
+                    raise RuntimeError(f"MCP tool '{name}' call timed out after 10s")
                 except Exception as e:
                     # Check if this is an error response from the tool
                     error_msg = str(e)

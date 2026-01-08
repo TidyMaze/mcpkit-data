@@ -102,7 +102,7 @@ services:
       start_period: 10s
 
   consul:
-    image: consul:1.18
+    image: hashicorp/consul:latest
     hostname: consul
     container_name: consul-test
     ports:

@@ -674,11 +674,36 @@ Session analysis:
 
 ## 🧪 Testing
 
+### Quick Start
+
 ```bash
+# Run all tests
 pytest
+
+# Run unit tests only (no Docker required)
+make test-unit
+
+# Run integration tests (requires Docker)
+make test-integration
+
+# Run with coverage
+make test-coverage
 ```
 
-All tests use mocks/stubs. No real connections needed! ✅
+### Coverage
+
+```bash
+# Run tests with coverage
+make test-coverage
+
+# Generate HTML report
+make coverage-html
+open htmlcov/index.html
+```
+
+**Target**: 95% coverage for core modules. See [`tests/COVERAGE.md`](tests/COVERAGE.md) for details.
+
+All tests use Docker containers for external services (Kafka, PostgreSQL, LocalStack, Consul, Nomad). No real AWS credentials needed! ✅
 
 ### 🔄 Reloading MCP Server After Code Changes
 

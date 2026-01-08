@@ -31,6 +31,7 @@ dev = [
     "pytest",
     "pytest-mock",
     "pytest-cov",
+    "pytest-timeout",
     "responses",
     "mcp>=1.0.0",
     "moto>=5.0.0",
@@ -58,6 +59,7 @@ markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
 ]
 addopts = "--cov=mcpkit --cov-report=term-missing --cov-report=html"
+timeout = 10
 
 [tool.mypy]
 python_version = "3.13"

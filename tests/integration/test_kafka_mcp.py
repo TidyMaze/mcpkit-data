@@ -38,8 +38,8 @@ def kafka_topic(docker_services, kafka_setup):
         topic = KafkaNewTopic(name=topic_name, num_partitions=1, replication_factor=1)
         admin_client.create_topics([topic])
     
-    # Wait for topic creation
-    time.sleep(3)
+    # Wait for topic creation (reduced from 3s to 0.5s)
+    time.sleep(0.5)
     
     yield topic_name
     
@@ -82,7 +82,7 @@ def test_kafka_offsets_mcp(mcp_client, kafka_setup, kafka_topic, kafka_producer)
         kafka_producer.send(kafka_topic, value="test_message".encode())
         kafka_producer.flush()
     
-    time.sleep(1)
+    time.sleep(0.1)  # Reduced wait time
     
     response = call_tool(mcp_client, "kafka_offsets", topic=kafka_topic)
     
@@ -105,7 +105,7 @@ def test_kafka_consume_batch_mcp(mcp_client, kafka_setup, kafka_topic, kafka_pro
             kafka_producer.send(kafka_topic, value=msg.encode())
         kafka_producer.flush()
     
-    time.sleep(1)
+    time.sleep(0.1)  # Reduced wait time
     
     response = call_tool(
         mcp_client,
@@ -132,7 +132,7 @@ def test_kafka_consume_tail_mcp(mcp_client, kafka_setup, kafka_topic, kafka_prod
             kafka_producer.send(kafka_topic, value=f"tail_msg_{i}".encode())
         kafka_producer.flush()
     
-    time.sleep(1)
+    time.sleep(0.1)  # Reduced wait time
     
     response = call_tool(
         mcp_client,
@@ -164,7 +164,7 @@ def test_kafka_filter_mcp(mcp_client, kafka_setup, kafka_topic, kafka_producer):
             kafka_producer.send(kafka_topic, value=json.dumps(msg).encode())
         kafka_producer.flush()
     
-    time.sleep(1)
+    time.sleep(0.1)  # Reduced wait time
     
     # Consume and get records
     consume_response = call_tool(
@@ -253,11 +253,11 @@ def test_kafka_consume_batch_with_partition_mcp(mcp_client, kafka_setup, kafka_t
         from confluent_kafka import Producer
         kafka_producer.produce(kafka_topic, value=b"test message", partition=0)
         kafka_producer.flush(timeout=10)
-        time.sleep(2)
+        time.sleep(0.2)  # Reduced wait time
     except Exception:
         kafka_producer.send(kafka_topic, value=b"test message", partition=0)
         kafka_producer.flush()
-        time.sleep(2)
+        time.sleep(0.2)  # Reduced wait time
     
     response = call_tool(
         mcp_client,

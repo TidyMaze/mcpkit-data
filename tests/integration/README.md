@@ -131,20 +131,21 @@ PostgreSQL is started in Docker. Database tests use:
 
 ## Coverage
 
-To measure coverage:
-
 ```bash
 # Run tests with coverage
 make test-coverage
 
 # Generate HTML report
 make coverage-html
-
-# View report
 open htmlcov/index.html
+
+# Terminal report
+pytest --cov=mcpkit --cov-report=term-missing -v
 ```
 
-Target: **95% coverage** for `mcpkit/server.py` and `mcpkit/core/*.py`
+**Target**: 95% coverage for `mcpkit/server.py` and `mcpkit/core/*.py`
+
+See [`COVERAGE.md`](../COVERAGE.md) for details.
 
 ## Prerequisites
 
