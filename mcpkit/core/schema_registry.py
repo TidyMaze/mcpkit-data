@@ -61,9 +61,20 @@ def schema_registry_get(schema_id: Optional[int] = None, subject: Optional[str] 
         if schema_id is not None:
             # Response: {"schema": "..."}
             schema_str = data.get("schema", "")
+            # Parse schema if it's a string
+            import json
+            if isinstance(schema_str, str):
+                try:
+                    schema_json = json.loads(schema_str)
+                except (json.JSONDecodeError, TypeError):
+                    schema_json = {"schema": schema_str}
+            else:
+                schema_json = data
             return {
                 "schema_id": schema_id,
-                "schema_json": data,  # May be string or dict
+                "subject": None,
+                "version": None,
+                "schema_json": schema_json,
                 "schema_string": schema_str if isinstance(schema_str, str) else None,
             }
         else:

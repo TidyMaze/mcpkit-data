@@ -159,8 +159,8 @@ def test_pandas_schema_check_missing_columns(clean_registry):
         required_columns=["a", "b", "c"],  # c is missing
     )
     assert result["valid"] is False
-    assert len(result["issues"]) > 0
-    assert any(issue["type"] == "missing_columns" for issue in result["issues"])
+    assert len(result["errors"]) > 0
+    assert any("Missing columns" in err for err in result["errors"])
 
 
 def test_pandas_schema_check_dtype_mismatch(clean_registry):
@@ -173,7 +173,7 @@ def test_pandas_schema_check_dtype_mismatch(clean_registry):
     )
     # Should either be valid (if dtype check is lenient) or invalid
     assert "valid" in result
-    assert "issues" in result
+    assert "errors" in result
 
 
 def test_pandas_schema_check_null_values(clean_registry):
@@ -185,8 +185,8 @@ def test_pandas_schema_check_null_values(clean_registry):
         non_null_columns=["a", "b"],
     )
     assert result["valid"] is False
-    assert len(result["issues"]) > 0
-    assert any(issue["type"] == "null_values" for issue in result["issues"])
+    assert len(result["errors"]) > 0
+    assert any("null" in err.lower() for err in result["errors"])
 
 
 def test_pandas_schema_check_valid_dataset(clean_registry):
@@ -200,7 +200,7 @@ def test_pandas_schema_check_valid_dataset(clean_registry):
         non_null_columns=["id", "name"],
     )
     assert result["valid"] is True
-    assert len(result["issues"]) == 0
+    assert result["errors"] is None or len(result["errors"]) == 0
 
 
 def test_pandas_schema_check_no_constraints(clean_registry):
@@ -209,7 +209,7 @@ def test_pandas_schema_check_no_constraints(clean_registry):
     
     result = pandas_schema_check("ds1")
     assert result["valid"] is True
-    assert len(result["issues"]) == 0
+    assert result["errors"] is None or len(result["errors"]) == 0
 
 
 def test_pandas_sample_stratified(clean_registry):

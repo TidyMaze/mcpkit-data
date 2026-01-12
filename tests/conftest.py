@@ -1,42 +1,24 @@
 """Pytest configuration and fixtures."""
 
+import atexit
+
+# Import fixtures from conftest_mcp.py
+import sys
 import os
-import tempfile
-from pathlib import Path
-
-import pytest
+sys.path.insert(0, os.path.dirname(__file__))
+from conftest_mcp import *  # noqa: F403, F401
 
 
-@pytest.fixture
-def temp_dir():
-    """Create temporary directory for tests."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
+def pytest_configure(config):
+    """Configure pytest to combine subprocess coverage."""
+    # Register coverage combine to run at exit
+    def combine_coverage():
+        try:
+            import coverage
+            cov = coverage.Coverage()
+            cov.combine()
+            cov.save()
+        except Exception:
+            pass
 
-
-@pytest.fixture
-def mock_env(monkeypatch):
-    """Mock environment variables for testing."""
-    def _set_env(**kwargs):
-        for key, value in kwargs.items():
-            monkeypatch.setenv(key, value)
-    return _set_env
-
-
-@pytest.fixture
-def clean_registry(monkeypatch, temp_dir):
-    """Clean dataset registry for testing."""
-    dataset_dir = temp_dir / "datasets"
-    dataset_dir.mkdir()
-    monkeypatch.setenv("MCPKIT_DATASET_DIR", str(dataset_dir))
-    yield dataset_dir
-
-
-@pytest.fixture
-def clean_artifacts(monkeypatch, temp_dir):
-    """Clean artifact directory for testing."""
-    artifact_dir = temp_dir / "artifacts"
-    artifact_dir.mkdir()
-    monkeypatch.setenv("MCPKIT_ARTIFACT_DIR", str(artifact_dir))
-    yield artifact_dir
-
+    atexit.register(combine_coverage)

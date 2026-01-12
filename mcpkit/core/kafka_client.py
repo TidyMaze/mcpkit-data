@@ -9,6 +9,14 @@ from kafka import KafkaConsumer, KafkaAdminClient
 from kafka.structs import TopicPartition
 from kafka.errors import KafkaError
 
+# Import compression-related errors for better error handling
+try:
+    from kafka.errors import UnsupportedCodecError, UnsupportedCompressionTypeError
+except ImportError:
+    # Fallback for older kafka-python versions
+    UnsupportedCodecError = None
+    UnsupportedCompressionTypeError = None
+
 from .guards import GuardError, cap_records, get_max_records, get_timeout_secs
 from .decode import avro_decode
 
@@ -54,8 +62,14 @@ def _decode_kafka_value(value_bytes: bytes, schema_registry_url: Optional[str] =
             value_base64 = base64.b64encode(value_bytes).decode("utf-8")
             decoded_result = avro_decode(value_base64, schema_registry_url=registry_url)
             decoded_data = decoded_result.get("decoded", {})
-            # Convert to JSON string
-            return json.dumps(decoded_data)
+            # Convert to JSON string with datetime handling
+            from datetime import datetime, date, time
+            class DateTimeEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, (datetime, date, time)):
+                        return obj.isoformat()
+                    return super().default(obj)
+            return json.dumps(decoded_data, cls=DateTimeEncoder)
         else:
             # Avro detected but no Schema Registry URL provided - cannot decode
             raise GuardError("Avro message detected but MCPKIT_SCHEMA_REGISTRY_URL not set. Provide schema_registry_url parameter or set environment variable.")
@@ -171,6 +185,16 @@ def kafka_offsets(topic: str, group_id: Optional[str] = None, bootstrap_servers:
         
         return {"topic": topic, "partitions": offsets}
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error: {e}")
     finally:
         if consumer:
@@ -259,7 +283,7 @@ def kafka_consume_batch(
             if partitions:
                 consumer.seek_to_beginning(*partitions)
         
-        records = []
+        records: list[dict[str, Any]] = []
         limit = max_records if max_records else get_max_records()
         
         # Use poll with timeout instead of iterator to avoid hanging
@@ -398,6 +422,16 @@ def kafka_consume_batch(
                 "columns": columns,
             }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error: {e}")
     finally:
         if consumer:
@@ -564,6 +598,16 @@ def kafka_consume_tail(
                 "columns": columns,
             }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error: {e}")
     finally:
         if consumer:
@@ -615,6 +659,16 @@ def kafka_list_topics(bootstrap_servers: Optional[str] = None) -> dict:
             "topic_count": len(topics)
         }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error listing topics: {e}")
     except Exception as e:
         raise GuardError(f"Error listing topics: {e}")
@@ -642,6 +696,8 @@ def kafka_describe_topic(topic: str, bootstrap_servers: Optional[str] = None) ->
     
     try:
         # Use consumer to get partition metadata
+        # For existing topics, we'll subscribe and check partitions
+        # For nonexistent topics, we check first to avoid auto-creation (if AdminClient available)
         consumer_config = config.copy()
         consumer_config["consumer_timeout_ms"] = 10000
         consumer_config["enable_auto_commit"] = False
@@ -649,19 +705,63 @@ def kafka_describe_topic(topic: str, bootstrap_servers: Optional[str] = None) ->
         
         consumer = KafkaConsumer(**consumer_config)
         
-        # Subscribe to the topic to trigger metadata fetch
+        # Quick check: try to get metadata without subscribing first
+        consumer.poll(timeout_ms=500)
+        cluster = consumer._client.cluster
+        existing_topics = cluster.topics()
+        
+        # If topic not in metadata, try AdminClient to confirm it doesn't exist (avoid auto-creation)
+        # Use short timeout to avoid blocking
+        if topic not in existing_topics:
+            try:
+                from kafka import KafkaAdminClient
+                bootstrap = bootstrap_servers or os.getenv("MCPKIT_KAFKA_BOOTSTRAP")
+                if bootstrap:
+                    admin_config = {"bootstrap_servers": bootstrap.split(",") if isinstance(bootstrap, str) else bootstrap}
+                    admin_client_check = KafkaAdminClient(**admin_config)
+                    try:
+                        from kafka.admin import ConfigResource, ConfigResourceType
+                        config_resource = ConfigResource(ConfigResourceType.TOPIC, topic)
+                        # Short timeout - if it fails quickly, topic doesn't exist
+                        configs = admin_client_check.describe_configs([config_resource], request_timeout_ms=1000)
+                        if config_resource not in configs:
+                            # Topic doesn't exist
+                            consumer.close()
+                            admin_client_check.close()
+                            raise GuardError(f"Topic {topic} not found")
+                    except Exception as e:
+                        error_str = str(e).lower()
+                        # Only raise if it's clearly a "not found" error
+                        if any(phrase in error_str for phrase in ["not found", "does not exist", "unknown topic", "invalid topic", "topic or partition"]):
+                            consumer.close()
+                            try:
+                                admin_client_check.close()
+                            except Exception:
+                                pass
+                            raise GuardError(f"Topic {topic} not found")
+                        # Other errors (timeout, network) - proceed to subscribe
+                    finally:
+                        try:
+                            admin_client_check.close()
+                        except Exception:
+                            pass
+            except (ImportError, Exception):
+                # AdminClient not available - will proceed to subscribe (may auto-create)
+                pass
+        
+        # Subscribe to the topic to get partition metadata
         consumer.subscribe([topic])
         consumer.poll(timeout_ms=5000)
-        
         import time
         time.sleep(1)
         
-        # Get cluster metadata
+        # Get cluster metadata after subscription
         cluster = consumer._client.cluster
         
         # Get partitions for the topic
         partitions = cluster.partitions_for_topic(topic)
         if not partitions:
+            consumer.close()
             raise GuardError(f"Topic {topic} not found")
         
         # Get basic partition info - just partition numbers
@@ -704,6 +804,16 @@ def kafka_describe_topic(topic: str, bootstrap_servers: Optional[str] = None) ->
             "config": topic_config,
         }
     except KafkaError as e:
+        # Check for compression codec errors and provide helpful message
+        error_str = str(e).lower()
+        if (UnsupportedCodecError and isinstance(e, UnsupportedCodecError)) or \
+           (UnsupportedCompressionTypeError and isinstance(e, UnsupportedCompressionTypeError)) or \
+           "snappy" in error_str and ("not found" in error_str or "libraries" in error_str):
+            raise GuardError(
+                f"Kafka compression codec error: {e}\n"
+                f"To fix this, install python-snappy: pip install python-snappy\n"
+                f"Or install with optional dependency: pip install mcpkit-data[kafka-snappy]"
+            )
         raise GuardError(f"Kafka error describing topic: {e}")
     except Exception as e:
         raise GuardError(f"Error describing topic: {e}")
@@ -729,7 +839,7 @@ def _flatten_dict(d: dict, parent_key: str = "", sep: str = "_") -> dict:
     Returns:
         Flattened dictionary
     """
-    items = []
+    items: list[tuple[str, Any]] = []
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
         if isinstance(v, dict):
@@ -764,8 +874,8 @@ def kafka_flatten_records(records: list[dict]) -> dict:
         }
     
     # Process all records to collect all possible columns
-    flattened_records = []
-    all_columns = set()
+    flattened_records: list[dict[str, Any]] = []
+    all_columns: set[str] = set()
     
     for record in records:
         flat = {
@@ -900,16 +1010,18 @@ def kafka_flatten_dataset(dataset_id: str, out_dataset_id: Optional[str] = None)
         result = kafka_flatten_records(records)
     
     # Save as new dataset
-    if result["rows"]:
-        df_out = pd.DataFrame(result["rows"], columns=result["columns"])
+    rows: list[list[Any]] = result["rows"]  # type: ignore[assignment]
+    columns: list[str] = result["columns"]  # type: ignore[assignment]
+    if rows:
+        df_out = pd.DataFrame(rows, columns=columns)
     else:
-        df_out = pd.DataFrame(columns=result["columns"])
+        df_out = pd.DataFrame(columns=columns)
     
     save_result = save_dataset(df_out, out_dataset_id)
     
     return {
         "dataset_id": save_result["dataset_id"],
         "columns": result["columns"],
-        "rows": len(result["rows"]),
+        "rows": len(result["rows"]),  # type: ignore[arg-type]
         "record_count": result["record_count"],
     }

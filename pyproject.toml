@@ -21,19 +21,30 @@ dependencies = [
     "polars",
     "pyarrow",
     "duckdb",
-    "JayDeBeApi",
-    "JPype1",
     "matplotlib",
+    "psycopg2-binary",
+    "pymysql",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "pytest-mock",
+    "pytest-cov",
+    "pytest-timeout",
     "responses",
+    "mcp>=1.0.0",
+    "moto>=5.0.0",
+    "docker>=7.0.0",
+    "psycopg2-binary>=2.9.0",
+    "kafka-python>=2.0.0",
+    "requests>=2.31.0",
 ]
 integration = [
     "confluent-kafka",
+]
+kafka-snappy = [
+    "python-snappy",
 ]
 ge = [
     "great-expectations",
@@ -50,4 +61,16 @@ python_functions = "test_*"
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
 ]
+addopts = "--cov=mcpkit --cov-report=term-missing --cov-report=html -v --tb=short -s"
+timeout = 10
 
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+# Ignore pandas type stub issues (known limitations)
+[[tool.mypy.overrides]]
+module = "pandas.*"
+ignore_errors = true

@@ -45,6 +45,7 @@ def polars_from_rows(columns: list[str], rows: list[list], dataset_id: Optional[
         "dataset_id": dataset_id,
         "rows": len(df),
         "columns": list(df.columns),
+        "path": str(path),
     }
 
 
@@ -85,6 +86,7 @@ def _save_polars_dataset(df: pl.DataFrame, dataset_id: Optional[str] = None) -> 
         "dataset_id": dataset_id,
         "rows": len(df),
         "columns": list(df.columns),
+        "path": str(path),
     }
 
 
@@ -152,5 +154,6 @@ def polars_export(dataset_id: str, format: str, filename: str) -> dict:
         "format": format,
         "filename": filename,
         "path": str(path),
+        "artifact_path": str(path),  # Alias for compatibility
     }
 
